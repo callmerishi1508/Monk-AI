@@ -10,6 +10,7 @@ import {
   ProductVertical,
   RunState,
   TelemetryEvent,
+  VerificationCheck,
   VerificationEvidence,
 } from "./types";
 
@@ -107,8 +108,7 @@ export async function approveRun(runId: string, options: ApprovalOptions = {}): 
   const action = options.action || "approve";
 
   if (run.state !== "WAITING_APPROVAL") {
-    run = failRun(run, "FAILED_APPROVAL", `Approval attempted from illegal state ${run.state}.`);
-    await saveRun(touch(run));
+    // Return run unmodified to gracefully ignore concurrent/duplicate requests
     return run;
   }
 
@@ -169,6 +169,7 @@ export async function approveRun(runId: string, options: ApprovalOptions = {}): 
   } catch (error) {
     run.retryCount += 1;
     run = addTelemetry(run, "ENGINEERING_EXECUTOR", "ENGINEERING_ERROR", error instanceof Error ? error.message : "Unknown engineering error.");
+    await saveRun(touch(run));
 
     if (run.retryCount <= run.maxRetries) {
       try {
@@ -180,7 +181,8 @@ export async function approveRun(runId: string, options: ApprovalOptions = {}): 
           run.lastCheckpoint = "VERIFICATION_PASSED";
           run = transition(run, "COMPLETED", "Verification passed after engineering retry.");
         }
-      } catch {
+      } catch (retryError) {
+        run = addTelemetry(run, "ORCHESTRATOR", "RETRY_EXHAUSTED", retryError instanceof Error ? retryError.message : "Unknown retry error.");
         run = failRun(run, "FAILED_ENGINEERING", "Engineering failed after retry limit.");
       }
     } else {
@@ -271,43 +273,108 @@ async function verifyRun(run: MonkRun): Promise<MonkRun> {
   const vertical = run.productIntent.vertical;
   const files = run.artifacts.map((artifact) => artifact.path);
   const contentByPath = new Map(run.artifacts.map((artifact) => [artifact.path, artifact.content.toLowerCase()]));
-  const checks = getVerificationChecks(vertical, run);
+  const verificationRules = getVerificationChecks(vertical, run);
 
-  const matchedRoutes = checks.routes.filter((route) => files.includes(route));
-  const matchedSchemas = checks.schemaTerms.filter((term) => {
-    const schema = contentByPath.get("lib/schema.ts") || "";
-    return schema.includes(term);
+  // Build verification checks
+  const checks: VerificationCheck[] = [];
+
+  // Check 1: Package.json exists
+  const hasPackageJson = files.includes("package.json");
+  checks.push({
+    type: "PACKAGE_JSON",
+    name: "Package manifest exists",
+    passed: hasPackageJson,
+    detail: hasPackageJson ? "package.json found in artifacts" : "package.json missing",
+    expected: "package.json",
+    actual: hasPackageJson ? "package.json" : "not found",
   });
-  const matchedTerms = checks.requiredTerms.filter((term) =>
-    [...contentByPath.values()].some((content) => content.includes(term))
-  );
 
-  const passed =
-    matchedRoutes.length === checks.routes.length &&
-    matchedSchemas.length === checks.schemaTerms.length &&
-    matchedTerms.length === checks.requiredTerms.length &&
-    files.includes("package.json");
+  // Check 2: Route matches
+  const matchedRoutes = verificationRules.routes.filter((route) => files.includes(route));
+  for (const route of verificationRules.routes) {
+    const found = files.includes(route);
+    checks.push({
+      type: "ROUTE_MATCH",
+      name: `Route ${route} exists`,
+      passed: found,
+      detail: found ? `Route ${route} verified` : `Route ${route} not found`,
+      expected: route,
+      actual: found ? route : "not found",
+    });
+  }
 
+  // Check 3: Schema terms
+  const schemaContent = contentByPath.get("lib/schema.ts") || "";
+  for (const term of verificationRules.schemaTerms) {
+    const found = schemaContent.includes(term);
+    checks.push({
+      type: "SCHEMA_TERM",
+      name: `Schema term "${term}" exists`,
+      passed: found,
+      detail: found ? `Term "${term}" found in schema` : `Term "${term}" missing from schema`,
+      expected: term,
+      actual: found ? term : "not found",
+    });
+  }
+
+  // Check 4: Required terms across all files
+  for (const term of verificationRules.requiredTerms) {
+    const found = [...contentByPath.values()].some((content) => content.includes(term));
+    checks.push({
+      type: "REQUIRED_TERM",
+      name: `Required term "${term}" exists`,
+      passed: found,
+      detail: found ? `Term "${term}" found in generated content` : `Term "${term}" missing from all files`,
+      expected: term,
+      actual: found ? term : "not found",
+    });
+  }
+
+  // Check 5: Content validity (each artifact has non-empty content)
+  for (const artifact of run.artifacts) {
+    const hasContent = artifact.content && artifact.content.length > 0;
+    checks.push({
+      type: "CONTENT_VALID",
+      name: `Content valid for ${artifact.path}`,
+      passed: Boolean(hasContent),
+      detail: hasContent ? `${artifact.path} has valid content (${artifact.content.length} chars)` : `${artifact.path} is empty`,
+      expected: "non-empty content",
+      actual: hasContent ? `${artifact.content.length} chars` : "empty",
+    });
+  }
+
+  const passedCount = checks.filter((c) => c.passed).length;
+  const failedCount = checks.filter((c) => !c.passed).length;
+  const passed = failedCount === 0;
+
+  // Update artifact verification status
   run.artifacts = run.artifacts.map((artifact) => ({
     ...artifact,
     verificationStatus: passed ? "PASSED" : "FAILED",
   }));
 
   if (!passed) {
-    return failRun(run, "FAILED_VALIDATION", "Verification failed content checks.");
+    // Add failed checks to telemetry for debugging
+    const failedChecks = checks.filter((c) => !c.passed);
+    run = addTelemetry(run, "VERIFICATION", "CHECKS_FAILED", `${failedCount} checks failed: ${failedChecks.map((c) => c.name).join(", ")}`);
+    return failRun(run, "FAILED_VALIDATION", `Verification failed: ${failedCount} of ${checks.length} checks did not pass.`);
   }
 
   const evidence: VerificationEvidence = {
     generatedFiles: files,
     matchedRoutes,
-    matchedSchemas,
+    matchedSchemas: verificationRules.schemaTerms,
     telemetrySnapshot: {
       eventCount: run.telemetry.length,
       transitionCount: run.transitions.length,
       artifactCount: run.artifacts.length,
     },
-    verificationSummary: `Verified ${files.length} generated files, ${matchedRoutes.length} routes, and ${matchedSchemas.length} schema terms.`,
+    verificationSummary: `Verified ${files.length} generated files, ${matchedRoutes.length} routes, and ${verificationRules.schemaTerms.length} schema terms. All ${passedCount} checks passed.`,
     humanReadableSummary: buildHumanSummary(vertical),
+    checks,
+    passedCount,
+    failedCount,
+    verifiedAt: new Date().toISOString(),
   };
 
   run.evidence = evidence;

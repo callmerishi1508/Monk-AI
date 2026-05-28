@@ -74,6 +74,23 @@ export type ArtifactRecord = ProposedMutation & {
   verificationStatus: "PENDING" | "PASSED" | "FAILED";
 };
 
+export type VerificationCheckType =
+  | "FILE_EXISTS"
+  | "ROUTE_MATCH"
+  | "SCHEMA_TERM"
+  | "REQUIRED_TERM"
+  | "PACKAGE_JSON"
+  | "CONTENT_VALID";
+
+export type VerificationCheck = {
+  type: VerificationCheckType;
+  name: string;
+  passed: boolean;
+  detail: string;
+  expected?: string;
+  actual?: string;
+};
+
 export type VerificationEvidence = {
   generatedFiles: string[];
   matchedRoutes: string[];
@@ -85,6 +102,10 @@ export type VerificationEvidence = {
   };
   verificationSummary: string;
   humanReadableSummary: string;
+  checks: VerificationCheck[];
+  passedCount: number;
+  failedCount: number;
+  verifiedAt: string;
 };
 
 export type ApprovalStatus = {
