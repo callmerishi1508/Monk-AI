@@ -198,6 +198,27 @@ export function mockStartupDocument(idea: string, ideaType: IdeaType, sector: st
       { name: "AI Symptom Triage", description: "Intelligent chatbot to assess urgency and route to the right care", priority: "MUST_HAVE", effort: "HIGH", userStory: "As a patient, I want immediate guidance on whether I need urgent care." },
       { name: "Prescription Management", description: "Automated refills and pharmacy routing", priority: "SHOULD_HAVE", effort: "MEDIUM", userStory: "As a user, I want my medications refilled automatically before I run out." }
     ];
+    sectorPersonas = [
+      { name: "Dr. Sarah — The Clinic Owner", age: "40-55", role: "Primary Care Physician", painPoints: ["Too much admin work", "Compliance headaches"], goals: ["Spend more time with patients", "Reduce no-shows"], techSavviness: "MEDIUM" },
+      { name: "Mark — The Patient", age: "30-65", role: "Patient", painPoints: ["Hard to book appointments", "Lost records"], goals: ["Access care quickly", "Manage prescriptions easily"], techSavviness: "LOW" }
+    ];
+    sectorCompetitors = [
+      { name: "Legacy EHR Systems", strengths: ["Deep hospital integrations", "Familiarity"], weaknesses: ["Terrible UX", "Extremely slow", "Expensive"], differentiator: "Consumer-grade UX with enterprise-grade compliance." }
+    ];
+  } else if (sector.includes("Cyber") || sector.includes("Security")) {
+    sectorFeatures = [
+      { name: "Zero-Trust Architecture", description: "Continuous verification and micro-segmentation of all network traffic", priority: "MUST_HAVE", effort: "HIGH", userStory: "As an admin, I want to ensure no unauthorized access happens even if the perimeter is breached." },
+      { name: "Automated Threat Hunting", description: "AI-driven anomaly detection to identify zero-day vulnerabilities", priority: "MUST_HAVE", effort: "HIGH", userStory: "As a security analyst, I want the system to flag suspicious behavior automatically." },
+      { name: "Incident Response Playbooks", description: "One-click execution of containment and mitigation workflows", priority: "MUST_HAVE", effort: "MEDIUM", userStory: "As an admin, I want to lock down compromised systems instantly." },
+      { name: "Vulnerability Scanner", description: "Continuous scanning of dependencies and infrastructure", priority: "SHOULD_HAVE", effort: "MEDIUM", userStory: "As a developer, I want to know if I introduce a vulnerable package." }
+    ];
+    sectorPersonas = [
+      { name: "Elena — The CISO", age: "40-55", role: "Chief Information Security Officer", painPoints: ["Alert fatigue", "Talent shortage", "Compliance audits"], goals: ["Zero breaches", "Automate compliance reporting"], techSavviness: "HIGH" },
+      { name: "David — The SecOps Analyst", age: "25-35", role: "Security Operations", painPoints: ["Too many false positives", "Manual log parsing"], goals: ["Respond to real threats faster", "Automate remediation"], techSavviness: "HIGH" }
+    ];
+    sectorCompetitors = [
+      { name: "Enterprise Security Suites", strengths: ["Comprehensive coverage", "Brand trust"], weaknesses: ["Too complex to deploy", "Generates too much noise"], differentiator: "AI-curated alerts with automated remediation playbooks." }
+    ];
   }
 
   return {
