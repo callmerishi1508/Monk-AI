@@ -1,1316 +1,1341 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle,
-  CheckCircle2,
-  CircleDot,
-  Clock3,
-  DatabaseZap,
-  FileCode2,
-  GitCommitHorizontal,
-  GitFork,
-  Gauge,
-  Link2,
-  Lock,
-  Play,
-  Pause,
-  RefreshCw,
-  ShieldCheck,
-  Sparkles,
-  UserCheck,
-  Eye,
-  ChevronRight,
-  Info,
-  XCircle,
+  ArrowRight, BrainCircuit, CheckCircle2, ChevronDown, ChevronRight,
+  Code2, DollarSign, Download, FileText, Layers, Loader2, Maximize2,
+  Megaphone, MessageSquare, Microscope, PenTool, Play, RefreshCw,
+  Scale, Search, Settings, Shield, Sparkles, Star, Target, TrendingUp,
+  Users, X, Zap, Building2, Activity, GitBranch, Eye, BarChart3,
+  Globe, Package, FlaskConical, Briefcase, Clock, AlertTriangle,
+  CheckSquare, Edit3, Trash2, Copy, ExternalLink, ArrowLeft,
 } from "lucide-react";
-import type { AgentName, MonkRun, RunState } from "@/lib/monk/types";
+import type { MonkSession, TeamId, TeamWorker, ClarificationQuestion, StartupDocument } from "@/lib/monk/types";
 
-const flowNodes: Array<{ state: RunState; label: string; agent: AgentName }> = [
-  { state: "PLANNING", label: "PM Scope", agent: "PRODUCT_MANAGER" },
-  { state: "COMPLIANCE_REVIEW", label: "Compliance", agent: "COMPLIANCE_GATEKEEPER" },
-  { state: "WAITING_APPROVAL", label: "Approval", agent: "HUMAN_APPROVAL" },
-  { state: "ENGINEERING", label: "Engineering", agent: "ENGINEERING_EXECUTOR" },
-  { state: "VERIFYING", label: "Verify", agent: "VERIFICATION" },
-  { state: "COMPLETED", label: "Evidence", agent: "TELEMETRY" },
+/* ══════════════════════════════════════════════════════════════
+   STATIC CONFIG
+   ══════════════════════════════════════════════════════════════ */
+
+const EXAMPLE_PROMPTS = [
+  "I want to start a trading company",
+  "Build a dating website",
+  "I want to solve food waste in restaurants",
+  "Create a cybersecurity platform for small businesses",
+  "Build an agriculture monitoring app using IoT",
+  "I want to create an online learning platform for kids",
+  "Build a peer-to-peer rental marketplace",
+  "I want to solve mental health access for rural areas",
 ];
 
-const stateTone: Record<RunState, string> = {
-  INTAKE: "border-slate-600 bg-slate-900 text-slate-200",
-  PLANNING: "border-cyan-400 bg-cyan-950/60 text-cyan-100",
-  COMPLIANCE_REVIEW: "border-amber-400 bg-amber-950/60 text-amber-100",
-  BLOCKED: "border-red-400 bg-red-950/70 text-red-100",
-  WAITING_APPROVAL: "border-indigo-400 bg-indigo-950/60 text-indigo-100",
-  ENGINEERING: "border-blue-400 bg-blue-950/60 text-blue-100",
-  VERIFYING: "border-emerald-400 bg-emerald-950/60 text-emerald-100",
-  COMPLETED: "border-green-400 bg-green-950/70 text-green-100",
-  FAILED: "border-red-400 bg-red-950/70 text-red-100",
+const STAGES = [
+  { id: "IDEA_INTAKE",        label: "Idea Analysis",      icon: <Sparkles size={13} /> },
+  { id: "TEAM_ASSEMBLY",      label: "Team Assembly",      icon: <Users size={13} /> },
+  { id: "CLARIFICATION",      label: "Discovery Q&A",      icon: <MessageSquare size={13} /> },
+  { id: "DOCUMENT_DRAFT",     label: "Building Document",  icon: <FileText size={13} /> },
+  { id: "DOCUMENT_REVIEW",    label: "Human Review",       icon: <Eye size={13} /> },
+  { id: "TEAM_DISPATCH",      label: "Team Dispatch",      icon: <Zap size={13} /> },
+  { id: "PARALLEL_EXECUTION", label: "Teams Working",      icon: <Activity size={13} /> },
+  { id: "CROSS_FUNCTIONAL",   label: "Cross-Team Sync",    icon: <GitBranch size={13} /> },
+  { id: "OUTPUT_COLLECTION",  label: "Assembling Outputs", icon: <Package size={13} /> },
+  { id: "COMPLETE",           label: "Complete",           icon: <CheckCircle2 size={13} /> },
+];
+
+const TEAM_ICONS: Record<TeamId, React.ReactNode> = {
+  PRODUCT:     <FileText size={18} />,
+  ENGINEERING: <Code2 size={18} />,
+  DESIGN:      <PenTool size={18} />,
+  RESEARCH:    <Microscope size={18} />,
+  MARKETING:   <Megaphone size={18} />,
+  LEGAL:       <Scale size={18} />,
+  FINANCE:     <DollarSign size={18} />,
+  SALES:       <TrendingUp size={18} />,
+  COMPLIANCE:  <Shield size={18} />,
+  QA:          <CheckCircle2 size={18} />,
+  OPERATIONS:  <Settings size={18} />,
+  SECURITY:    <Shield size={18} />,
 };
 
-const severityTone: Record<string, string> = {
-  LOW: "border-emerald-400/50 bg-emerald-950/40 text-emerald-100",
-  MEDIUM: "border-yellow-400/50 bg-yellow-950/40 text-yellow-100",
-  HIGH: "border-orange-400/50 bg-orange-950/40 text-orange-100",
-  CRITICAL: "border-red-400/60 bg-red-950/50 text-red-100 shadow-[0_0_15px_rgba(239,68,68,0.2)]",
-  PENDING: "border-slate-500/50 bg-slate-800/80 text-slate-300 animate-pulse",
+const TEAM_COLORS: Record<TeamId, { border: string; bg: string; text: string; glow: string }> = {
+  PRODUCT:     { border: "border-cyan-500/30",    bg: "bg-cyan-500/10",    text: "text-cyan-300",    glow: "shadow-[0_0_20px_rgba(6,182,212,0.15)]" },
+  ENGINEERING: { border: "border-emerald-500/30", bg: "bg-emerald-500/10", text: "text-emerald-300", glow: "shadow-[0_0_20px_rgba(16,185,129,0.15)]" },
+  DESIGN:      { border: "border-violet-500/30",  bg: "bg-violet-500/10",  text: "text-violet-300",  glow: "shadow-[0_0_20px_rgba(139,92,246,0.15)]" },
+  RESEARCH:    { border: "border-purple-500/30",  bg: "bg-purple-500/10",  text: "text-purple-300",  glow: "shadow-[0_0_20px_rgba(168,85,247,0.15)]" },
+  MARKETING:   { border: "border-pink-500/30",    bg: "bg-pink-500/10",    text: "text-pink-300",    glow: "shadow-[0_0_20px_rgba(236,72,153,0.15)]" },
+  LEGAL:       { border: "border-amber-500/30",   bg: "bg-amber-500/10",   text: "text-amber-300",   glow: "shadow-[0_0_20px_rgba(245,158,11,0.15)]" },
+  FINANCE:     { border: "border-yellow-500/30",  bg: "bg-yellow-500/10",  text: "text-yellow-300",  glow: "shadow-[0_0_20px_rgba(234,179,8,0.15)]" },
+  SALES:       { border: "border-orange-500/30",  bg: "bg-orange-500/10",  text: "text-orange-300",  glow: "shadow-[0_0_20px_rgba(249,115,22,0.15)]" },
+  COMPLIANCE:  { border: "border-red-500/30",     bg: "bg-red-500/10",     text: "text-red-300",     glow: "shadow-[0_0_20px_rgba(239,68,68,0.15)]" },
+  QA:          { border: "border-teal-500/30",    bg: "bg-teal-500/10",    text: "text-teal-300",    glow: "shadow-[0_0_20px_rgba(20,184,166,0.15)]" },
+  OPERATIONS:  { border: "border-blue-500/30",    bg: "bg-blue-500/10",    text: "text-blue-300",    glow: "shadow-[0_0_20px_rgba(59,130,246,0.15)]" },
+  SECURITY:    { border: "border-rose-500/30",    bg: "bg-rose-500/10",    text: "text-rose-300",    glow: "shadow-[0_0_20px_rgba(244,63,94,0.15)]" },
 };
+
+const ACTIVE_STAGES = new Set([
+  "IDEA_INTAKE", "TEAM_ASSEMBLY", "CLARIFICATION", "DOCUMENT_DRAFT",
+  "TEAM_DISPATCH", "PARALLEL_EXECUTION", "CROSS_FUNCTIONAL", "OUTPUT_COLLECTION",
+]);
+
+/* ══════════════════════════════════════════════════════════════
+   ROOT PAGE
+   ══════════════════════════════════════════════════════════════ */
 
 export default function Home() {
-  const [idea, setIdea] = useState("Invoice SaaS for freelancers to create invoices and track payment status");
-  const [activeRun, setActiveRun] = useState<MonkRun | null>(null);
-  const [runs, setRuns] = useState<MonkRun[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [replayStep, setReplayStep] = useState<number | null>(null);
-  const [replayPaused, setReplayPaused] = useState(false);
-  const [approvalEdits, setApprovalEdits] = useState({ runLabel: "", apiRouteName: "" });
+  const [session, setSession] = useState<MonkSession | null>(null);
+  const [sessions, setSessions] = useState<MonkSession[]>([]);
+  const [ideaInput, setIdeaInput] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+  const [currentPromptIdx, setCurrentPromptIdx] = useState(0);
+  const [showHistory, setShowHistory] = useState(false);
+  const [activeOutputTab, setActiveOutputTab] = useState<string | null>(null);
+  const [drawerOutput, setDrawerOutput] = useState<{ title: string; content: string; type: string } | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Rotate example prompts
   useEffect(() => {
-    loadRuns();
+    const t = setInterval(() => setCurrentPromptIdx(i => (i + 1) % EXAMPLE_PROMPTS.length), 3000);
+    return () => clearInterval(t);
   }, []);
 
+  // Load session list on mount
+  useEffect(() => { loadSessions(); }, []);
+
+  // Poll active session
   useEffect(() => {
-    if (!activeRun) return;
-    setApprovalEdits({
-      runLabel: activeRun.runLabel,
-      apiRouteName: getCurrentApiRouteName(activeRun),
-    });
-  }, [activeRun?.runId]);
-
-  useEffect(() => {
-    if (replayStep === null || !activeRun) return;
-    if (replayPaused) return;
-    const totalSteps = getReplayStepCount(activeRun);
-    if (replayStep >= totalSteps - 1) return;
-    const timer = window.setTimeout(() => {
-      setReplayStep((prev) => {
-        if (prev === null || prev >= totalSteps - 1) return prev;
-        return prev + 1;
-      });
-    }, 650);
-    return () => window.clearTimeout(timer);
-  }, [replayStep, activeRun, replayPaused]);
-
-  const visibleTelemetry = useMemo(() => {
-    if (!activeRun) return [];
-    if (replayStep === null) return activeRun.telemetry;
-    return activeRun.telemetry.slice(0, Math.min(replayStep + 1, activeRun.telemetry.length));
-  }, [activeRun, replayStep]);
-
-  const visibleTransitions = useMemo(() => {
-    if (!activeRun) return [];
-    if (replayStep === null) return activeRun.transitions;
-    const transitionCount = visibleTelemetry.filter((e) => e.event === "STATE_TRANSITION").length;
-    return activeRun.transitions.slice(0, transitionCount);
-  }, [activeRun, replayStep, visibleTelemetry]);
-
-  const evidenceVisible = useMemo(() => {
-    if (!activeRun) return false;
-    if (replayStep === null) return true;
-    return replayStep >= activeRun.telemetry.length;
-  }, [activeRun, replayStep]);
-
-  const replayState = useMemo(() => {
-    if (!activeRun || replayStep === null) return activeRun?.state || null;
-    return visibleTransitions.at(-1)?.nextState || "INTAKE";
-  }, [activeRun, replayStep, visibleTransitions]);
-
-  const visibleApprovalEvents = useMemo(() => {
-    return visibleTelemetry.filter((event) => event.agent === "HUMAN_APPROVAL" || event.event.includes("APPROVAL"));
-  }, [visibleTelemetry]);
-
-  const headerMetrics = getRunMetrics(activeRun);
-  const headerState = replayStep !== null && replayState ? `REPLAY ${replayState}` : activeRun?.state || "READY";
-  const headerApproval = activeRun?.approval.approved ? "APPROVED" : activeRun?.state === "WAITING_APPROVAL" ? "WAITING" : "NOT REQUIRED";
-
-  async function loadRuns() {
-    try {
-      const response = await fetch("/api/runs", { cache: "no-store" });
-      if (response.ok) {
-        const data = await response.json();
-        setRuns(data.runs || []);
-        if (!activeRun && data.runs?.[0]) setActiveRun(data.runs[0]);
-      }
-    } catch (error) {
-      console.error("Failed to load runs", error);
+    if (!session) { stopPolling(); return; }
+    if (ACTIVE_STAGES.has(session.stage)) {
+      pollingRef.current = setInterval(() => pollSession(session.sessionId), 2500);
+    } else {
+      stopPolling();
     }
+    return stopPolling;
+  }, [session?.stage, session?.sessionId]);
+
+  function stopPolling() {
+    if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
   }
 
-  async function createNewRun() {
-    setIsLoading(true);
-    setReplayStep(null);
-    setReplayPaused(false);
+  async function loadSessions() {
     try {
-      const response = await fetch("/api/runs", {
+      const res = await fetch("/api/sessions", { cache: "no-store" });
+      if (res.ok) { const d = await res.json(); setSessions(d.sessions || []); }
+    } catch {}
+  }
+
+  async function pollSession(id: string) {
+    try {
+      const res = await fetch(`/api/sessions/${id}`, { cache: "no-store" });
+      if (res.ok) { const d = await res.json(); setSession(d.session); }
+    } catch {}
+  }
+
+  async function createSession() {
+    if (!ideaInput.trim() || isCreating) return;
+    setIsCreating(true);
+    try {
+      const res = await fetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea }),
+        body: JSON.stringify({ idea: ideaInput.trim() }),
       });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.run) {
-          setActiveRun(data.run);
-          await loadRuns();
-        }
+      if (res.ok) {
+        const d = await res.json();
+        setSession(d.session);
+        setIdeaInput("");
+        await loadSessions();
       }
-    } catch (error) {
-      console.error("Failed to create new run", error);
-    } finally {
-      setIsLoading(false);
-    }
+    } catch {} finally { setIsCreating(false); }
   }
 
-  async function handleApprovalAction(action: "approve" | "reject" | "request_revision") {
-    if (!activeRun) return;
-    setIsLoading(true);
-    setReplayStep(null);
-    setReplayPaused(false);
+  async function approveTeams(teamIds: TeamId[]) {
+    if (!session) return;
     try {
-      const response = await fetch(`/api/runs/${activeRun.runId}/approve`, {
+      const res = await fetch(`/api/sessions/${session.sessionId}/approve-teams`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          edits: approvalEdits,
-        }),
+        body: JSON.stringify({ teams: teamIds }),
       });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.run) {
-          setActiveRun(data.run);
-          await loadRuns();
-        }
-      }
-    } catch (error) {
-      console.error("Failed to process approval action", error);
-    } finally {
-      setIsLoading(false);
-    }
+      if (res.ok) { const d = await res.json(); if (d.session) setSession(d.session); }
+    } catch {}
   }
 
-  function startReplay() {
-    if (!activeRun || getReplayStepCount(activeRun) === 0) return;
-    setReplayStep(0);
-    setReplayPaused(false);
+  async function answerQuestion(questionId: string, answer: string | null, skipped = false) {
+    if (!session) return;
+    try {
+      const res = await fetch(`/api/sessions/${session.sessionId}/answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionId, answer, skipped }),
+      });
+      if (res.ok) { const d = await res.json(); if (d.session) setSession(d.session); }
+    } catch {}
   }
 
-  function stopReplay() {
-    setReplayStep(null);
-    setReplayPaused(false);
+  async function skipAllQuestions() {
+    if (!session) return;
+    try {
+      const res = await fetch(`/api/sessions/${session.sessionId}/answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skipAll: true }),
+      });
+      if (res.ok) { const d = await res.json(); if (d.session) setSession(d.session); }
+    } catch {}
   }
 
-  return (
-    <main className="min-h-screen bg-[#080b10] text-slate-100">
-      <header className="border-b border-white/10 bg-[#0d121b]">
-        <div className="mx-auto max-w-[1600px] px-5 py-6">
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_650px] xl:items-start">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-md border border-emerald-400/25 bg-emerald-950/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-300">
-                <Sparkles size={14} />
-                MONK AI
-              </div>
-              <h1 className="mt-4 text-4xl font-bold tracking-tight text-white md:text-5xl">Governed Autonomous Execution</h1>
-              <p className="mt-3 max-w-2xl text-base leading-7 text-slate-300">
-                Product Manager, Compliance Gatekeeper, Human Approval, Engineering Executor, and Verification coordinate deterministically through one orchestration graph.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 md:grid-cols-5 xl:mt-1">
-              <Signal label="Active State" value={headerState} emphasis />
-              <Signal label="Compliance" value={activeRun?.compliance?.severity || "PENDING"} />
-              <Signal label="Approval" value={headerApproval} />
-              <Signal label="Replay" value={replayStep !== null ? replayPaused ? "PAUSED" : "RUNNING" : "READY"} />
-              <Signal label="Confidence" value={`${headerMetrics.confidence}%`} />
-            </div>
-          </div>
-        </div>
-      </header>
+  async function reviewDocument(action: "APPROVE" | "MODIFY" | "REFRAME", modifications?: string) {
+    if (!session) return;
+    try {
+      const res = await fetch(`/api/sessions/${session.sessionId}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, modifications }),
+      });
+      if (res.ok) { const d = await res.json(); if (d.session) setSession(d.session); }
+    } catch {}
+  }
 
-      <div className="mx-auto grid max-w-[1600px] gap-5 px-5 py-6 xl:grid-cols-[360px_minmax(0,1fr)_420px]">
-        <LeftPanel
-          idea={idea}
-          setIdea={setIdea}
-          activeRun={activeRun}
-          runs={runs}
-          isLoading={isLoading}
-          createNewRun={createNewRun}
-          loadRuns={loadRuns}
-          selectRun={(run) => {
-            setActiveRun(run);
-            setReplayStep(null);
-            setReplayPaused(false);
-          }}
-          replaying={replayStep !== null}
-          replayState={replayState}
-          visibleTransitions={visibleTransitions}
-        />
+  function downloadOutput(output: MonkSession["teamOutputs"][0]) {
+    const isCode = output.outputType === "WEBSITE_CODE" || output.outputType === "TRD";
+    const ext = isCode ? ".tsx" : ".md";
+    const blob = new Blob([output.content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${output.teamId.toLowerCase()}-${output.title.replace(/\s+/g, "-").toLowerCase()}${ext}`;
+    a.click(); URL.revokeObjectURL(url);
+  }
 
-        <CenterPanel
-          run={activeRun}
-          visibleTelemetry={visibleTelemetry}
-          visibleTransitions={visibleTransitions}
-          replaying={replayStep !== null}
-          replayPaused={replayPaused}
-          replayStep={replayStep}
-          replayState={replayState}
-          visibleApprovalEvents={visibleApprovalEvents}
-          isLoading={isLoading}
-          approvalEdits={approvalEdits}
-          setApprovalEdits={setApprovalEdits}
-          handleApprovalAction={handleApprovalAction}
-          startReplay={startReplay}
-          stopReplay={stopReplay}
-          toggleReplayPause={() => setReplayPaused((value) => !value)}
-          evidenceVisible={evidenceVisible}
-        />
+  function downloadDocument(doc: StartupDocument) {
+    const md = formatDocumentAsMarkdown(doc);
+    const blob = new Blob([md], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "startup-document.md";
+    a.click(); URL.revokeObjectURL(url);
+  }
 
-        <RightPanel run={activeRun} evidenceVisible={evidenceVisible} replaying={replayStep !== null} />
-      </div>
-    </main>
-  );
-}
+  const stageIndex = STAGES.findIndex(s => s.id === session?.stage);
+  const isProcessing = session && ACTIVE_STAGES.has(session.stage);
 
-function LeftPanel({
-  idea,
-  setIdea,
-  activeRun,
-  runs,
-  isLoading,
-  createNewRun,
-  loadRuns,
-  selectRun,
-  replaying,
-  replayState,
-  visibleTransitions,
-}: {
-  idea: string;
-  setIdea: (idea: string) => void;
-  activeRun: MonkRun | null;
-  runs: MonkRun[];
-  isLoading: boolean;
-  createNewRun: () => void;
-  loadRuns: () => void;
-  selectRun: (run: MonkRun) => void;
-  replaying: boolean;
-  replayState: RunState | null;
-  visibleTransitions: MonkRun["transitions"];
-}) {
-  return (
-    <aside className="space-y-5">
-      <Card title="Command Input" action={<IconButton title="Refresh runs" onClick={loadRuns} icon={<RefreshCw size={15} />} />}>
-        <textarea
-          value={idea}
-          onChange={(event) => setIdea(event.target.value)}
-          rows={5}
-          className="w-full resize-none rounded-md border border-white/10 bg-[#080c13] p-4 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400/50"
-        />
-        <button
-          onClick={createNewRun}
-          disabled={isLoading || !idea.trim()}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-400 px-4 py-3 text-sm font-bold text-emerald-950 hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
-        >
-          <Play size={16} />
-          Start Governed Run
-        </button>
-      </Card>
-
-      <Card title="Live Agent Graph">
-        {activeRun ? (
-          <AgentGraph run={activeRun} replaying={replaying} replayState={replayState} visibleTransitions={visibleTransitions} />
-        ) : (
-          <p className="text-sm text-slate-400">Start or select a run to activate the graph.</p>
-        )}
-      </Card>
-
-      <Card title="Demo Rehearsal">
-        <div className="space-y-3">
-          {[
-            "Open dashboard and show prior runs",
-            "Run invoice idea and pause at approval",
-            "Rename API route to billing, then approve",
-            "Replay the completed run",
-            "Run medical idea and show compliance block",
-          ].map((step, index) => (
-            <div key={step} className="stagger-item flex gap-3 rounded-md border border-white/10 bg-[#0b1018] p-3 transition-all duration-200 hover:bg-white/5 hover:border-white/20">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-950/80 text-[11px] font-bold text-emerald-300 ring-1 ring-emerald-400/30 shadow-[0_0_10px_rgba(52,211,153,0.1)]">{index + 1}</span>
-              <p className="text-xs leading-6 font-medium text-slate-300">{step}</p>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <Card title="Run History">
-        <div className="space-y-2">
-          {runs.length === 0 ? (
-            <p className="text-sm text-slate-400">No persisted runs yet.</p>
-          ) : (
-            runs.map((run, index) => (
-              <button
-                key={run.runId}
-                onClick={() => selectRun(run)}
-                className={`stagger-item w-full rounded-md border p-4 text-left transition-all duration-200 ${
-                  activeRun?.runId === run.runId ? "border-emerald-400/60 bg-emerald-950/40 ring-1 ring-emerald-400/50 shadow-[0_0_15px_rgba(52,211,153,0.1)]" : "border-white/10 bg-[#0b1018] hover:bg-white/10 hover:border-white/20"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-sm font-semibold text-white">{run.runLabel}</span>
-                  <span className={`rounded px-2 py-1 text-[11px] font-bold ${run.state === "BLOCKED" ? "bg-red-950 text-red-200" : run.state === "COMPLETED" ? "bg-emerald-950 text-emerald-200" : "bg-slate-800 text-slate-300"}`}>
-                    {run.state}
-                  </span>
-                </div>
-                <p className="mt-2 line-clamp-2 text-xs text-slate-500 leading-relaxed">{run.runStatusMessage}</p>
-              </button>
-            ))
-          )}
-        </div>
-      </Card>
-    </aside>
-  );
-}
-
-function CenterPanel({
-  run,
-  visibleTelemetry,
-  visibleTransitions,
-  replaying,
-  replayPaused,
-  replayStep,
-  replayState,
-  visibleApprovalEvents,
-  isLoading,
-  approvalEdits,
-  setApprovalEdits,
-  handleApprovalAction,
-  startReplay,
-  stopReplay,
-  toggleReplayPause,
-  evidenceVisible,
-}: {
-  run: MonkRun | null;
-  visibleTelemetry: MonkRun["telemetry"];
-  visibleTransitions: MonkRun["transitions"];
-  replaying: boolean;
-  replayPaused: boolean;
-  replayStep: number | null;
-  replayState: RunState | null;
-  visibleApprovalEvents: MonkRun["telemetry"];
-  isLoading: boolean;
-  approvalEdits: { runLabel: string; apiRouteName: string };
-  setApprovalEdits: (edits: { runLabel: string; apiRouteName: string }) => void;
-  handleApprovalAction: (action: "approve" | "reject" | "request_revision") => void;
-  startReplay: () => void;
-  stopReplay: () => void;
-  toggleReplayPause: () => void;
-  evidenceVisible: boolean;
-}) {
-  const telemetryEndRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (replaying) {
-      telemetryEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [visibleTelemetry.length, replaying]);
-
-  if (!run) {
+  /* ── LANDING PAGE ── */
+  if (!session) {
     return (
-      <section className="rounded-lg border border-dashed border-white/15 bg-[#101722] p-10 text-center">
-        <p className="text-sm text-slate-400">Enter an idea to watch PM, Compliance, Approval, Engineering, Verification, and Telemetry coordinate.</p>
-      </section>
+      <LandingPage
+        ideaInput={ideaInput}
+        setIdeaInput={setIdeaInput}
+        isCreating={isCreating}
+        createSession={createSession}
+        currentPromptIdx={currentPromptIdx}
+        sessions={sessions}
+        onSelectSession={s => setSession(s)}
+        showHistory={showHistory}
+        setShowHistory={setShowHistory}
+      />
     );
   }
 
   return (
-    <section className="space-y-5">
-      <HeroRun
-        run={run}
-        handleApprovalAction={handleApprovalAction}
-        startReplay={startReplay}
-        stopReplay={stopReplay}
-        isLoading={isLoading}
-        replaying={replaying}
-        replayState={replayState}
-      />
-
-      {replaying && (
-        <div className="rounded-lg border border-emerald-400/30 bg-gradient-to-br from-emerald-950/40 to-slate-900/40 p-5 backdrop-blur-sm shadow-[0_0_30px_rgba(52,211,153,0.1)] transition-all duration-300">
-          {/* Replay Header */}
-          <div className="flex flex-col gap-4 mb-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-3">
-              <div className={`flex h-12 w-12 items-center justify-center rounded-full border-2 transition-all duration-500 ${
-                replayPaused 
-                  ? "border-amber-400/50 bg-amber-950/50 shadow-[0_0_20px_rgba(251,191,36,0.2)]" 
-                  : "border-emerald-400/50 bg-emerald-950/50 shadow-[0_0_20px_rgba(52,211,153,0.2)] animate-pulse"
-              }`}>
-                {replayPaused ? <Pause size={20} className="text-amber-300" /> : <Play size={20} className="text-emerald-300" />}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <p className="text-base font-bold text-white">Replay Run</p>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                    replayPaused 
-                      ? "bg-amber-950/50 text-amber-300 border border-amber-400/30" 
-                      : "bg-emerald-950/50 text-emerald-300 border border-emerald-400/30"
-                  }`}>
-                    {replayPaused ? "Paused" : "Playing"}
-                  </span>
+    <>
+      {/* Artifact Drawer */}
+      {drawerOutput && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setDrawerOutput(null)} />
+          <div className="relative ml-auto w-full max-w-3xl bg-[#07070f] border-l border-white/[0.07] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between gap-4 border-b border-white/[0.05] px-6 py-4 shrink-0">
+              <div className="flex items-center gap-3">
+                <FileText size={16} className="text-emerald-400" />
+                <div>
+                  <p className="font-semibold text-white text-sm">{drawerOutput.title}</p>
+                  <p className="text-[9px] text-[#3F3F46] font-mono uppercase tracking-widest">{drawerOutput.type}</p>
                 </div>
-                <div className="mt-0.5 flex items-center gap-2 text-sm text-slate-400">
-                  <span>Current State:</span>
-                  <span className="font-semibold text-emerald-300">{replayState}</span>
-                  {!replayPaused && (replayStep || 0) < getReplayStepCount(run) - 1 && (
-                    <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-                  )}
+              </div>
+              <button onClick={() => setDrawerOutput(null)} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-2 text-[#71717A] hover:text-white transition-colors">
+                <X size={14} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              <pre className="font-mono text-[11px] text-[#A1A1AA] leading-relaxed whitespace-pre-wrap">{drawerOutput.content}</pre>
+            </div>
+            <div className="border-t border-white/[0.05] px-6 py-3 shrink-0 flex items-center justify-between">
+              <p className="text-[8px] text-[#3F3F46] font-mono uppercase tracking-widest">Press Esc or click outside to close</p>
+              <button onClick={() => { const blob = new Blob([drawerOutput.content], { type: "text/plain" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${drawerOutput.title.replace(/\s+/g, "-").toLowerCase()}.md`; a.click(); }}
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/8 px-3 py-1.5 text-[9px] font-bold uppercase tracking-widest text-emerald-300 hover:bg-emerald-500/15 transition-all">
+                <Download size={10} /> Download
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Workspace */}
+      <div className="min-h-screen bg-[#050508] text-white flex flex-col">
+        {/* Ambient orbs */}
+        <div className="fixed inset-0 pointer-events-none z-0">
+          <div className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-emerald-500/5 blur-[120px]" />
+          <div className="absolute top-1/3 -right-40 w-[500px] h-[500px] rounded-full bg-indigo-500/5 blur-[120px]" />
+          <div className="absolute -bottom-40 left-1/3 w-[400px] h-[400px] rounded-full bg-violet-500/4 blur-[100px]" />
+        </div>
+
+        {/* Header */}
+        <header className="sticky top-0 z-40 border-b border-white/[0.05] bg-[#050508]/80 backdrop-blur-2xl">
+          <div className="mx-auto max-w-[1800px] px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setSession(null)} className="flex items-center gap-2 text-[#52525B] hover:text-white transition-colors">
+                <ArrowLeft size={15} />
+              </button>
+              <div className="h-4 w-px bg-white/[0.08]" />
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-xl bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center">
+                  <BrainCircuit size={16} className="text-emerald-400" />
+                </div>
+                <div>
+                  <span className="text-sm font-bold text-white">{session.sessionLabel}</span>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-[8px] font-mono text-[#3F3F46] uppercase tracking-widest">{session.sector}</span>
+                    {session.ideaType && (
+                      <span className={`text-[7px] font-bold uppercase tracking-widest rounded-full px-1.5 py-0.5 ${
+                        session.ideaType === "PROBLEM_STATEMENT" ? "bg-violet-500/10 text-violet-400 border border-violet-500/20" : "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
+                      }`}>{session.ideaType === "PROBLEM_STATEMENT" ? "Problem Statement" : "Direct Build"}</span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-3 md:justify-end">
-              <div className="text-right">
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl font-bold text-white tabular-nums">{(replayStep || 0) + 1}</span>
-                  <span className="text-slate-500 text-lg">/</span>
-                  <span className="text-lg text-slate-400 tabular-nums">{getReplayStepCount(run)}</span>
-                </div>
-                <div className="mt-1 flex items-center justify-end gap-2">
-                  <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-700">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-300"
-                      style={{ width: `${Math.round((((replayStep || 0) + 1) / Math.max(1, getReplayStepCount(run))) * 100)}%` }}
-                    />
-                  </div>
-                  <span className="text-[10px] font-semibold text-slate-400 tabular-nums">
-                    {Math.round((((replayStep || 0) + 1) / Math.max(1, getReplayStepCount(run))) * 100)}%
-                  </span>
-                </div>
+
+            {/* Progress bar */}
+            <div className="flex-1 max-w-md hidden md:block">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[8px] font-bold uppercase tracking-widest text-[#52525B]">Overall Progress</span>
+                <span className="text-[10px] font-semibold text-white">{Math.round(session.overallProgress)}%</span>
               </div>
-              {(replayStep || 0) < getReplayStepCount(run) - 1 ? (
-                <button
-                  onClick={toggleReplayPause}
-                  className="flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:bg-white/10 hover:border-white/25 transition-all duration-200"
-                >
-                  {replayPaused ? <Play size={16} /> : <Pause size={16} />}
-                  {replayPaused ? "Resume" : "Pause"}
-                </button>
-              ) : (
-                <span className="flex items-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-950/40 px-4 py-2.5 text-sm font-semibold text-emerald-200">
-                  <CheckCircle2 size={16} />
-                  Complete
+              <div className="h-1.5 w-full bg-white/[0.05] rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-1000"
+                  style={{ width: `${session.overallProgress}%`, boxShadow: "0 0 10px rgba(16,185,129,0.5)" }} />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {isProcessing && (
+                <span className="flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/8 px-2.5 py-1 text-[8px] font-bold uppercase tracking-widest text-blue-400">
+                  <Loader2 size={9} className="animate-spin" />Processing
+                </span>
+              )}
+              {session.stage === "COMPLETE" && (
+                <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[8px] font-bold uppercase tracking-widest text-emerald-300">
+                  <CheckCircle2 size={9} />Complete
                 </span>
               )}
             </div>
           </div>
+        </header>
 
-          {/* Main Progress Bar */}
-          <div className="relative">
-            <div className="h-3 overflow-hidden rounded-full bg-slate-800 shadow-inner">
-              <div
-                className="relative h-full rounded-full bg-gradient-to-r from-emerald-600 via-emerald-400 to-emerald-300 transition-all duration-500 ease-out shadow-[0_0_15px_rgba(52,211,153,0.4)]"
-                style={{ width: `${(((replayStep || 0) + 1) / Math.max(1, getReplayStepCount(run))) * 100}%` }}
-              >
-                {!replayPaused && (replayStep || 0) < getReplayStepCount(run) - 1 && (
-                  <div className="absolute inset-0 bg-white/20 animate-[pulse_2s_ease-in-out_infinite]" />
-                )}
-              </div>
+        {/* 3-column layout */}
+        <div className="relative z-10 flex flex-1 mx-auto max-w-[1800px] w-full">
+
+          {/* LEFT — Stage Progress */}
+          <aside className="hidden lg:flex flex-col w-[220px] shrink-0 border-r border-white/[0.04] p-4 gap-1">
+            <p className="label-xs mb-3">Pipeline</p>
+            {STAGES.map((s, i) => {
+              const isCurrent = session.stage === s.id;
+              const isDone = stageIndex > i && !isCurrent;
+              const isWaiting = stageIndex < i;
+              return (
+                <div key={s.id} className={`relative flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-all ${
+                  isCurrent ? "bg-emerald-500/8 border border-emerald-500/20" :
+                  isDone ? "opacity-60" : "opacity-25"
+                }`}>
+                  {i < STAGES.length - 1 && <div className="absolute left-[21px] top-10 h-3 w-px bg-white/[0.06]" />}
+                  <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-all ${
+                    isCurrent ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.2)]" :
+                    isDone ? "border-emerald-500/20 bg-emerald-500/8 text-emerald-500" : "border-white/[0.06] bg-white/[0.02] text-[#3F3F46]"
+                  }`}>
+                    {isDone ? <CheckCircle2 size={10} /> : isCurrent ? <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> : s.icon}
+                  </div>
+                  <span className={`text-[10px] font-semibold ${isCurrent ? "text-white" : isDone ? "text-[#71717A]" : "text-[#3F3F46]"}`}>{s.label}</span>
+                  {isCurrent && isProcessing && <Loader2 size={8} className="ml-auto text-emerald-400 animate-spin shrink-0" />}
+                </div>
+              );
+            })}
+          </aside>
+
+          {/* CENTER — Main stage UI */}
+          <main className="flex-1 min-w-0 p-4 sm:p-6 overflow-y-auto">
+            <StageUI
+              session={session}
+              onApproveTeams={approveTeams}
+              onAnswerQuestion={answerQuestion}
+              onSkipAll={skipAllQuestions}
+              onReviewDocument={reviewDocument}
+              onDownloadDocument={downloadDocument}
+              onViewOutput={o => setDrawerOutput({ title: o.title, content: o.content, type: o.outputType })}
+              onDownloadOutput={downloadOutput}
+            />
+          </main>
+
+          {/* RIGHT — Live Activity Feed */}
+          <aside className="hidden xl:flex flex-col w-[280px] shrink-0 border-l border-white/[0.04] p-4 overflow-y-auto max-h-screen sticky top-0">
+            <p className="label-xs mb-3">Live Activity</p>
+            <div className="space-y-2 flex-1">
+              {session.events.length === 0
+                ? <p className="text-[10px] text-[#3F3F46] text-center mt-8">Activity starts when processing begins…</p>
+                : [...session.events].reverse().slice(0, 30).map((event, i) => (
+                  <div key={event.id} className="rounded-xl border border-white/[0.04] bg-white/[0.01] p-3">
+                    <p className="text-[8px] font-bold uppercase tracking-widest text-[#3F3F46] mb-1">{event.stage} · {new Date(event.timestamp).toLocaleTimeString()}</p>
+                    <p className="text-[11px] font-semibold text-[#A1A1AA] leading-snug">{event.event}</p>
+                    <p className="text-[10px] text-[#52525B] mt-1 leading-relaxed">{event.detail}</p>
+                  </div>
+                ))
+              }
             </div>
-            {/* Progress bar glow effect */}
-            <div className="absolute inset-0 rounded-full shadow-[0_0_20px_rgba(52,211,153,0.15)] pointer-events-none" />
+          </aside>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   LANDING PAGE
+   ══════════════════════════════════════════════════════════════ */
+
+function LandingPage({
+  ideaInput, setIdeaInput, isCreating, createSession,
+  currentPromptIdx, sessions, onSelectSession, showHistory, setShowHistory,
+}: {
+  ideaInput: string; setIdeaInput: (v: string) => void;
+  isCreating: boolean; createSession: () => void;
+  currentPromptIdx: number; sessions: MonkSession[];
+  onSelectSession: (s: MonkSession) => void;
+  showHistory: boolean; setShowHistory: (v: boolean) => void;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && !e.shiftKey && ideaInput.trim()) {
+      e.preventDefault(); createSession();
+    }
+  }
+
+  const SECTORS = ["FinTech","HealthTech","EdTech","AgriTech","CyberSecurity","E-Commerce","SaaS","Web3","DeepTech","PropTech","LegalTech","ClimaTech","Gaming","Logistics","B2B SaaS","Consumer","Trading","Social","Media","BioTech"];
+
+  return (
+    <div className="min-h-screen bg-[#050508] text-white relative overflow-hidden">
+      {/* Ambient background */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[900px] rounded-full bg-emerald-500/[0.04] blur-[150px]" />
+        <div className="absolute -top-40 left-0 w-[500px] h-[500px] rounded-full bg-violet-500/[0.05] blur-[120px]" />
+        <div className="absolute -top-40 right-0 w-[500px] h-[500px] rounded-full bg-indigo-500/[0.04] blur-[120px]" />
+        {/* Grid pattern */}
+        <div className="absolute inset-0 opacity-[0.015]"
+          style={{ backgroundImage: "linear-gradient(rgba(255,255,255,0.5) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.5) 1px,transparent 1px)", backgroundSize: "64px 64px" }} />
+      </div>
+
+      {/* Header */}
+      <header className="relative z-10 flex items-center justify-between px-6 py-5 max-w-7xl mx-auto">
+        <div className="flex items-center gap-2.5">
+          <div className="h-9 w-9 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
+            <BrainCircuit size={18} className="text-emerald-400" />
           </div>
+          <span className="text-[18px] font-bold tracking-tight text-white">MONK AI</span>
+          <span className="rounded-full border border-emerald-500/20 bg-emerald-500/8 px-2 py-0.5 text-[8px] font-bold uppercase tracking-widest text-emerald-400">v2.0</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowHistory(!showHistory)}
+            className="flex items-center gap-1.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2 text-[11px] font-semibold text-[#71717A] hover:text-white hover:border-white/[0.1] transition-all">
+            <Clock size={12} />{sessions.length > 0 ? `${sessions.length} Sessions` : "History"}
+          </button>
+        </div>
+      </header>
 
-          {/* Replay Checkpoints Timeline */}
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2 text-xs text-slate-500 shrink-0">
-              <span className="font-mono text-[10px]">CHECKPOINTS</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-1">
-              <span className={`rounded px-2 py-0.5 text-[10px] font-semibold transition-colors duration-300 ${visibleTelemetry.length > 0 ? "bg-cyan-950/50 text-cyan-300 border border-cyan-400/30 shadow-[0_0_10px_rgba(34,211,238,0.2)]" : "bg-slate-800 text-slate-500 border border-transparent"}`}>
-                {visibleTelemetry.length} Events
-              </span>
-              <span className="text-slate-600">•</span>
-              <span className={`rounded px-2 py-0.5 text-[10px] font-semibold transition-colors duration-300 ${visibleTransitions.length > 0 ? "bg-indigo-950/50 text-indigo-300 border border-indigo-400/30 shadow-[0_0_10px_rgba(99,102,241,0.2)]" : "bg-slate-800 text-slate-500 border border-transparent"}`}>
-                {visibleTransitions.length} Transitions
-              </span>
-              <span className="text-slate-600">•</span>
-              <span className={`rounded px-2 py-0.5 text-[10px] font-semibold transition-colors duration-300 ${run.evidence && evidenceVisible ? "bg-emerald-950/50 text-emerald-300 border border-emerald-400/30 shadow-[0_0_10px_rgba(52,211,153,0.2)]" : "bg-slate-800 text-slate-500 border border-transparent"}`}>
-                {run.evidence && evidenceVisible ? "Evidence" : "Pending"}
-              </span>
+      {/* Hero */}
+      <section className="relative z-10 max-w-4xl mx-auto px-6 pt-16 pb-20 text-center">
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/8 px-4 py-2 text-[11px] font-semibold text-emerald-300">
+          <Sparkles size={11} />From idea to startup in minutes · Universal · All Sectors
+        </div>
+
+        <h1 className="mb-5 text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.06]">
+          <span className="text-white">Turn any idea</span><br />
+          <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">into a company.</span>
+        </h1>
+
+        <p className="mb-10 text-lg text-[#71717A] max-w-2xl mx-auto leading-relaxed">
+          MONK AI assembles your team, asks the right questions, builds your startup document, and coordinates all departments — from product to legal — to deliver everything you need to launch.
+        </p>
+
+        {/* Input */}
+        <div className="relative max-w-2xl mx-auto mb-6">
+          <div className="rounded-3xl border border-white/[0.09] bg-white/[0.03] backdrop-blur-xl overflow-hidden shadow-[0_0_60px_rgba(16,185,129,0.06)] hover:border-white/[0.14] transition-all focus-within:border-emerald-500/30 focus-within:shadow-[0_0_60px_rgba(16,185,129,0.12)]">
+            <textarea
+              ref={textareaRef}
+              value={ideaInput}
+              onChange={e => setIdeaInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Describe your startup idea, problem you want to solve, or product to build…"
+              rows={3}
+              className="w-full resize-none bg-transparent px-6 pt-5 pb-2 text-[15px] text-white leading-relaxed placeholder:text-[#3F3F46] focus:outline-none"
+            />
+            <div className="flex items-center justify-between px-5 pb-4 pt-1">
+              <span className="text-[10px] text-[#3F3F46] font-mono">Enter ↵ to submit</span>
+              <button onClick={createSession} disabled={!ideaInput.trim() || isCreating}
+                className="flex items-center justify-center h-10 w-10 rounded-full bg-white text-black hover:bg-emerald-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:shadow-[0_0_20px_rgba(255,255,255,0.2)] active:scale-95">
+                {isCreating ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+              </button>
             </div>
           </div>
         </div>
-      )}
 
-      <Card title={replaying ? "Replay Stream" : "Execution Stream"} action={<span className="text-xs text-slate-500 font-semibold">{visibleTelemetry.length} events</span>}>
-        <div className="max-h-[480px] space-y-3 overflow-y-auto pr-2 scroll-smooth">
-          {visibleTelemetry.map((event, index) => (
-            <div
-              key={event.id}
-              className={`telemetry-event rounded-md border p-4 transition-all duration-300 ${replaying && index === visibleTelemetry.length - 1 ? "border-emerald-400 bg-emerald-950/30 ring-1 ring-emerald-400/50 shadow-[0_0_15px_rgba(52,211,153,0.15)]" : "border-white/10 bg-[#0b1018]"}`}
-            >
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-bold text-slate-200">{event.agent}</span>
-                <span className="text-sm font-semibold text-emerald-300">{event.event}</span>
-                <span className="text-xs text-slate-500 ml-auto">{formatTime(event.timestamp)}</span>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-slate-200 break-words">{event.detail}</p>
-            </div>
+        {/* Example prompts */}
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <span className="text-[11px] text-[#3F3F46]">Try:</span>
+          {EXAMPLE_PROMPTS.slice(0, 5).map((p, i) => (
+            <button key={p} onClick={() => setIdeaInput(p)}
+              className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3.5 py-1.5 text-[11px] text-[#71717A] hover:text-white hover:border-white/[0.15] hover:bg-white/[0.06] transition-all">
+              {p}
+            </button>
           ))}
-          <div ref={telemetryEndRef} />
         </div>
-      </Card>
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Card title="Approval Gate">
-          <GateStatus
-            run={run}
-            replaying={replaying}
-            visibleApprovalEvents={visibleApprovalEvents}
-            approvalEdits={approvalEdits}
-            setApprovalEdits={setApprovalEdits}
-            handleApprovalAction={handleApprovalAction}
-            isLoading={isLoading}
-          />
-        </Card>
-
-        <Card title="State Changes">
-          <div className="space-y-3">
-            {visibleTransitions.length === 0 ? (
-              <p className="text-sm text-slate-400">{replaying ? "Transitions will appear after telemetry replay." : "No transitions recorded."}</p>
-            ) : visibleTransitions.map((transition, index) => (
-              <div
-                key={`${transition.timestamp}-${index}`}
-                className={`telemetry-event rounded-md border p-4 transition-all duration-300 ${
-                  replaying && index === visibleTransitions.length - 1 ? "border-emerald-400 bg-emerald-950/30 ring-1 ring-emerald-400/50 shadow-[0_0_15px_rgba(52,211,153,0.15)]" : "border-white/10 bg-[#0b1018]"
-                }`}
-              >
-                <p className="text-sm font-semibold text-white">
-                  {transition.previousState} <span className="text-slate-500 mx-2">→</span> {transition.nextState}
-                </p>
-                <p className="mt-2 text-xs text-slate-400 break-words">{transition.reason}</p>
+        {/* How it works */}
+        <div className="mt-20 text-left">
+          <p className="text-center text-[11px] font-bold uppercase tracking-widest text-[#3F3F46] mb-8">How MONK AI works</p>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {[
+              { icon: <MessageSquare size={16} />, label: "Analyze Idea", desc: "Classify & discover" },
+              { icon: <Users size={16} />, label: "Assemble Team", desc: "Right departments" },
+              { icon: <FileText size={16} />, label: "Build Document", desc: "Full startup plan" },
+              { icon: <Activity size={16} />, label: "Teams Execute", desc: "Parallel workflows" },
+              { icon: <Download size={16} />, label: "Deliver Outputs", desc: "Download everything" },
+            ].map((step, i) => (
+              <div key={step.label} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 text-center">
+                <div className="flex items-center justify-center h-9 w-9 rounded-xl bg-white/[0.04] border border-white/[0.06] mx-auto mb-3 text-emerald-400">{step.icon}</div>
+                <p className="text-[11px] font-semibold text-white mb-1">{step.label}</p>
+                <p className="text-[9px] text-[#52525B]">{step.desc}</p>
               </div>
             ))}
           </div>
-        </Card>
-      </div>
-    </section>
+        </div>
+
+        {/* Sector scrolling marquee */}
+        <div className="mt-16 overflow-hidden">
+          <p className="text-center text-[10px] font-bold uppercase tracking-widest text-[#3F3F46] mb-4">Works for all sectors</p>
+          <div className="flex gap-3 animate-[scroll-names_30s_linear_infinite] whitespace-nowrap w-max">
+            {[...SECTORS, ...SECTORS].map((sector, i) => (
+              <span key={i} className="shrink-0 rounded-full border border-white/[0.06] bg-white/[0.02] px-3 py-1.5 text-[10px] font-medium text-[#71717A]">{sector}</span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Session history panel */}
+      {showHistory && sessions.length > 0 && (
+        <div className="fixed inset-y-0 right-0 z-50 w-80 bg-[#07070f]/95 backdrop-blur-2xl border-l border-white/[0.06] flex flex-col">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.05]">
+            <span className="text-sm font-bold text-white">Session History</span>
+            <button onClick={() => setShowHistory(false)} className="text-[#71717A] hover:text-white"><X size={15} /></button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {sessions.map(s => (
+              <button key={s.sessionId} onClick={() => { onSelectSession(s); setShowHistory(false); }}
+                className="w-full rounded-xl border border-white/[0.05] bg-white/[0.02] p-3.5 text-left hover:bg-white/[0.05] hover:border-white/[0.09] transition-all group">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-[11px] font-semibold text-white group-hover:text-emerald-300 transition-colors leading-tight">{s.sessionLabel}</span>
+                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-widest ${
+                    s.stage === "COMPLETE" ? "bg-emerald-500/15 text-emerald-400" :
+                    s.stage === "FAILED" ? "bg-red-500/15 text-red-400" : "bg-blue-500/15 text-blue-400"
+                  }`}>{s.stage}</span>
+                </div>
+                <p className="mt-1.5 text-[9px] text-[#3F3F46] leading-relaxed line-clamp-2">{s.idea}</p>
+                <p className="mt-1.5 text-[8px] text-[#2F2F3A] font-mono">{new Date(s.createdAt).toLocaleString()}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
-function RightPanel({ run, evidenceVisible, replaying }: { run: MonkRun | null; evidenceVisible: boolean; replaying: boolean }) {
-  const metrics = getRunMetrics(run);
+/* ══════════════════════════════════════════════════════════════
+   STAGE UI DISPATCHER
+   ══════════════════════════════════════════════════════════════ */
+
+function StageUI({
+  session, onApproveTeams, onAnswerQuestion, onSkipAll, onReviewDocument,
+  onDownloadDocument, onViewOutput, onDownloadOutput,
+}: {
+  session: MonkSession;
+  onApproveTeams: (teams: TeamId[]) => void;
+  onAnswerQuestion: (qId: string, answer: string | null, skipped?: boolean) => void;
+  onSkipAll: () => void;
+  onReviewDocument: (action: "APPROVE" | "MODIFY" | "REFRAME", mods?: string) => void;
+  onDownloadDocument: (doc: StartupDocument) => void;
+  onViewOutput: (o: MonkSession["teamOutputs"][0]) => void;
+  onDownloadOutput: (o: MonkSession["teamOutputs"][0]) => void;
+}) {
+  switch (session.stage) {
+    case "IDEA_INTAKE":
+      return <IdeaIntakeStage session={session} />;
+    case "TEAM_ASSEMBLY":
+      return <TeamAssemblyStage session={session} onApprove={onApproveTeams} />;
+    case "CLARIFICATION":
+      return <ClarificationStage session={session} onAnswer={onAnswerQuestion} onSkipAll={onSkipAll} />;
+    case "DOCUMENT_DRAFT":
+      return <DocumentDraftStage session={session} />;
+    case "DOCUMENT_REVIEW":
+      return <DocumentReviewStage session={session} onReview={onReviewDocument} onDownload={onDownloadDocument} />;
+    case "TEAM_DISPATCH":
+    case "PARALLEL_EXECUTION":
+    case "CROSS_FUNCTIONAL":
+    case "OUTPUT_COLLECTION":
+      return <ParallelExecutionStage session={session} />;
+    case "COMPLETE":
+      return <CompleteStage session={session} onViewOutput={onViewOutput} onDownloadOutput={onDownloadOutput} onDownloadDocument={onDownloadDocument} />;
+    case "FAILED":
+      return <FailedStage session={session} />;
+    default:
+      return <LoadingStage label="Initializing pipeline..." />;
+  }
+}
+
+/* ── Stage 1: Idea Intake ──────────────────────────────── */
+
+function IdeaIntakeStage({ session }: { session: MonkSession }) {
+  return (
+    <div className="max-w-2xl mx-auto space-y-6">
+      <SectionHeader icon={<Sparkles size={18} className="text-emerald-400" />} title="Analyzing Your Idea" subtitle="MONK AI is classifying your idea and understanding its context" />
+      <div className="rounded-3xl border border-white/[0.07] bg-white/[0.02] p-6 backdrop-blur-xl">
+        <p className="text-[11px] font-bold uppercase tracking-widest text-[#3F3F46] mb-3">Your Idea</p>
+        <p className="text-[15px] text-white leading-relaxed">{session.idea}</p>
+      </div>
+      <ProcessingCard label="Classification Engine" detail="Analyzing sector, idea type, and startup context..." />
+    </div>
+  );
+}
+
+/* ── Stage 2: Team Assembly ──────────────────────────────── */
+
+function TeamAssemblyStage({ session, onApprove }: { session: MonkSession; onApprove: (t: TeamId[]) => void }) {
+  const [selected, setSelected] = useState<Set<TeamId>>(new Set());
+  const proposed = session.proposedTeams;
+  const isReady = proposed.length > 0;
+
+  useEffect(() => {
+    if (proposed.length > 0) setSelected(new Set(proposed.map(t => t.teamId)));
+  }, [proposed.length]);
+
+  function toggle(id: TeamId) {
+    setSelected(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  }
+
+  if (!isReady) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <SectionHeader icon={<Users size={18} className="text-cyan-400" />} title="Assembling Your Team" subtitle="AI is selecting the right departments for your startup" />
+        <ProcessingCard label="Team Assembly Engine" detail="Evaluating which departments are required for your specific startup..." />
+      </div>
+    );
+  }
 
   return (
-    <aside className="space-y-5">
-      <Card title="Evidence Vault">
-        {run && evidenceVisible ? (
-          <div className="space-y-0">
-            {/* Creation Phase */}
-            <div className="group rounded-t-lg border border-white/10 bg-emerald-950/10 p-5 transition-colors duration-300 hover:bg-emerald-950/20">
-              <EvidencePhaseHeader icon={<FileCode2 size={18} />} phase="Creation" color="emerald" />
-              <div className="mt-4 rounded border border-emerald-400/25 bg-[#080c13] p-4 shadow-sm transition-colors duration-300 group-hover:border-emerald-400/40">
-                <EvidenceSection
-                  title="Generated Files"
-                  status={`${run.evidence?.generatedFiles.length || run.artifacts.length} files`}
-                  icon={<FileCode2 size={16} />}
-                  tone="emerald"
-                  compact
-                >
-                  <div className="space-y-2">
-                    {(run.evidence?.generatedFiles || run.artifacts.map((artifact) => artifact.path)).map((file) => (
-                    <div key={file} className="flex items-center gap-2 rounded border border-emerald-400/10 bg-[#0b1018] px-3 py-2.5 transition-colors hover:border-emerald-400/30">
-                      <FileCode2 size={14} className="text-emerald-500/50 shrink-0" />
-                        <p className="font-mono text-xs text-emerald-200 break-all">{file}</p>
-                      </div>
-                    ))}
-                  </div>
-                </EvidenceSection>
+    <div className="max-w-3xl mx-auto space-y-6">
+      <SectionHeader icon={<Users size={18} className="text-cyan-400" />} title="Your Startup Team"
+        subtitle={`MONK AI recommends ${proposed.length} departments. You can modify before proceeding.`} />
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {proposed.map(team => {
+          const colors = TEAM_COLORS[team.teamId];
+          const isSel = selected.has(team.teamId);
+          return (
+            <button key={team.teamId} onClick={() => toggle(team.teamId)}
+              className={`flex items-start gap-3.5 rounded-2xl border p-4 text-left transition-all group ${
+                isSel ? `${colors.border} ${colors.bg} ${colors.glow}` : "border-white/[0.04] bg-white/[0.01] opacity-50"
+              }`}>
+              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${isSel ? `${colors.border} ${colors.bg} ${colors.text}` : "border-white/[0.06] text-[#3F3F46]"}`}>
+                {TEAM_ICONS[team.teamId]}
               </div>
-            </div>
-
-            {/* Mutation Phase */}
-            <div className="group border-x border-white/10 bg-blue-950/10 p-5 transition-colors duration-300 hover:bg-blue-950/20">
-              <EvidencePhaseHeader icon={<GitCommitHorizontal size={18} />} phase="Mutation" color="blue" />
-              <div className="mt-4 rounded border border-blue-400/25 bg-[#080c13] p-4 shadow-sm transition-colors duration-300 group-hover:border-blue-400/40">
-                <EvidenceSection
-                  title="Mutation Commits"
-                  status={`${run.artifacts.length} commits`}
-                  icon={<GitCommitHorizontal size={16} />}
-                  tone="blue"
-                  compact
-                >
-                  <div className="space-y-3">
-                    {run.artifacts.map((artifact) => (
-                    <div key={artifact.commitId} className="group rounded border border-blue-400/20 bg-[#0b1018] p-4 transition-colors hover:border-blue-400/40">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <GitCommitHorizontal size={14} className="text-blue-400/50 shrink-0" />
-                            <p className="font-mono text-sm font-bold text-blue-300">{artifact.commitId}</p>
-                          </div>
-                          <p className="mt-3 text-xs font-semibold text-slate-200 break-all">{artifact.path}</p>
-                          <p className="mt-2 border-l-2 border-blue-400/20 pl-2 text-xs leading-5 text-slate-400 break-words">{artifact.diffSummary}</p>
-                          </div>
-                          <VerificationBadge status={artifact.verificationStatus} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </EvidenceSection>
-              </div>
-            </div>
-
-            {/* Verification Phase */}
-            <div className="group border-x border-white/10 bg-emerald-950/10 p-5 transition-colors duration-300 hover:bg-emerald-950/20">
-              <EvidencePhaseHeader icon={<CheckCircle2 size={18} />} phase="Verification" color="emerald" />
-              <div className="mt-4 space-y-4">
-                <div className="rounded border border-emerald-400/25 bg-[#080c13] p-4 shadow-sm transition-colors duration-300 group-hover:border-emerald-400/40">
-                  <EvidenceSection
-                    title="Verification Results"
-                    status={run.evidence ? "✓ PASSED" : "⏳ PENDING"}
-                    icon={<CheckCircle2 size={16} />}
-                    tone={run.evidence ? "emerald" : "slate"}
-                    compact
-                  >
-                    {run.evidence ? (
-                      <div className="space-y-4">
-                        <div className="rounded border border-emerald-400/20 bg-emerald-950/20 p-3">
-                          <p className="text-sm leading-6 text-emerald-100">{run.evidence.humanReadableSummary}</p>
-                          <p className="mt-2 text-xs text-emerald-400/80 font-mono">{run.evidence.verificationSummary}</p>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Validation Checks</p>
-                          <div className="grid gap-2">
-                            {run.evidence.checks.map((check, i) => (
-                              <div key={i} className={`flex items-start gap-3 rounded border p-3 ${check.passed ? "border-emerald-400/10 bg-[#0b1018]" : "border-red-400/10 bg-[#0b1018]"}`}>
-                                {check.passed ? <CheckCircle2 size={14} className="mt-0.5 text-emerald-500 shrink-0" /> : <XCircle size={14} className="mt-0.5 text-red-500 shrink-0" />}
-                                <div>
-                                  <p className="text-xs font-semibold text-slate-200">{check.name}</p>
-                                  <p className="mt-1 text-[11px] text-slate-400">{check.detail}</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-slate-400">Verification in progress...</p>
-                    )}
-                  </EvidenceSection>
-                </div>
-
-                <div className="rounded border border-emerald-400/25 bg-[#080c13] p-4 shadow-sm">
-                  <EvidenceSection
-                    title="Compliance Review"
-                    status={run.compliance?.severity || "⏳ PENDING"}
-                    icon={<ShieldCheck size={16} />}
-                    tone={run.compliance?.severity === "CRITICAL" ? "red" : "emerald"}
-                    compact
-                  >
-                    <div className="space-y-3">
-                      <div className={`rounded border p-3 ${run.compliance?.severity === "CRITICAL" ? "border-red-400/20 bg-red-950/20" : "border-emerald-400/20 bg-emerald-950/20"}`}>
-                        <p className={`text-sm leading-6 ${run.compliance?.severity === "CRITICAL" ? "text-red-200" : "text-emerald-200"}`}>
-                          {run.compliance?.reason || "Compliance review in progress..."}
-                        </p>
-                      </div>
-                      {run.compliance?.reviewedTerms && run.compliance.reviewedTerms.length > 0 ? (
-                        <div>
-                          <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">Reviewed Terms</p>
-                          <EvidenceList values={run.compliance.reviewedTerms} />
-                        </div>
-                      ) : (
-                        <p className="text-xs text-slate-500">✓ No blocking regulated terms detected</p>
-                      )}
-                    </div>
-                  </EvidenceSection>
-                </div>
-              </div>
-            </div>
-
-            {/* Execution Metrics */}
-            <div className="group rounded-b-lg border border-white/10 bg-slate-950/10 p-5 transition-colors duration-300 hover:bg-slate-950/20">
-              <EvidencePhaseHeader icon={<DatabaseZap size={18} />} phase="Execution Metrics" color="slate" />
-              <div className="mt-4 rounded border border-white/10 bg-[#080c13] p-4 shadow-sm transition-colors duration-300 group-hover:border-white/20">
-                <EvidenceSection
-                  title="Telemetry Snapshot"
-                  status={`${run.telemetry.length} events`}
-                  icon={<DatabaseZap size={16} />}
-                  tone="slate"
-                  compact
-                >
-                  <div className="grid grid-cols-3 gap-3">
-                    <EvidenceStat label="Events" value={String(run.evidence?.telemetrySnapshot.eventCount || run.telemetry.length)} />
-                    <EvidenceStat label="Transitions" value={String(run.evidence?.telemetrySnapshot.transitionCount || run.transitions.length)} />
-                    <EvidenceStat label="Artifacts" value={String(run.evidence?.telemetrySnapshot.artifactCount || run.artifacts.length)} />
-                  </div>
-                </EvidenceSection>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-md border border-white/10 bg-[#0b1018] p-4">
-            <p className="text-sm text-slate-400">
-              {replaying ? "Evidence is hidden until the replay reaches the verification checkpoint." : "Verification evidence appears after approval and engineering commit."}
-            </p>
-          </div>
-        )}
-      </Card>
-
-      <Card title="Repo and Deploy">
-        <div className="space-y-4">
-          <InfoRow icon={<GitFork size={16} />} label="Repository" value="Local workspace only" detail="C:\\AI Builders OpenAI x Outskill" />
-          <InfoRow icon={<Link2 size={16} />} label="Deployment" value="Not deployed" detail="Local execution evidence only" />
-          <InfoRow icon={<DatabaseZap size={16} />} label="Artifacts" value={run ? `runs/${run.runId}/app` : "No run selected"} detail="Committed by ORCHESTRATOR" />
-        </div>
-      </Card>
-
-      <Card title="Operational Metrics">
-        <div className="grid grid-cols-2 gap-4">
-          <Metric icon={<Clock3 size={16} />} label="Latency" value={`${metrics.latencyMs}ms`} />
-          <Metric icon={<Gauge size={16} />} label="Confidence" value={`${metrics.confidence}%`} />
-          <Metric icon={<DatabaseZap size={16} />} label="Token Cost" value={metrics.tokenCost} />
-          <Metric icon={<ShieldCheck size={16} />} label="Context Health" value={metrics.contextHealth} />
-        </div>
-      </Card>
-
-      <Card title="Committed Mutations">
-        <div className="max-h-[360px] space-y-3 overflow-y-auto pr-2">
-          {run?.artifacts.length ? (
-            run.artifacts.map((artifact) => (
-              <div key={artifact.commitId} className="rounded-md border border-white/10 bg-[#0b1018] p-3">
+              <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-sm font-semibold text-white">{artifact.path}</p>
-                  <span className="shrink-0 rounded border border-emerald-400/40 bg-emerald-950/30 px-2 py-1 text-[10px] font-bold text-emerald-200">{artifact.commitId}</span>
+                  <p className={`text-sm font-bold ${isSel ? "text-white" : "text-[#52525B]"}`}>{team.label}</p>
+                  <div className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 transition-all ${isSel ? "bg-white border-white" : "border-white/[0.1] bg-transparent"}`}>
+                    {isSel && <CheckCircle2 size={10} className="text-black" />}
+                  </div>
                 </div>
-                <p className="mt-2 text-xs text-slate-400">{artifact.diffSummary}</p>
+                <p className={`text-[10px] mt-1 leading-relaxed ${isSel ? "text-[#71717A]" : "text-[#3F3F46]"}`}>{team.description}</p>
               </div>
-            ))
-          ) : (
-            <p className="text-sm text-slate-400">No committed mutations.</p>
-          )}
-        </div>
-      </Card>
-    </aside>
-  );
-}
-
-function HeroRun({
-  run,
-  handleApprovalAction,
-  startReplay,
-  stopReplay,
-  isLoading,
-  replaying,
-  replayState,
-}: {
-  run: MonkRun;
-  handleApprovalAction: (action: "approve" | "reject" | "request_revision") => void;
-  startReplay: () => void;
-  stopReplay: () => void;
-  isLoading: boolean;
-  replaying: boolean;
-  replayState: RunState | null;
-}) {
-  const severity = run.compliance?.severity || "PENDING";
-  const verified = Boolean(run.evidence);
-  const displayedState = replaying && replayState ? replayState : run.state;
-  const metrics = getRunMetrics(run);
-
-  return (
-    <section className="rounded-lg border border-white/10 bg-[#111722] p-5 shadow-[0_24px_70px_rgba(0,0,0,0.24)]">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex-1">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className={`rounded-md border px-3 py-2 text-xs font-bold shadow-[0_0_24px_rgba(52,211,153,0.15)] ${stateTone[displayedState]}`}>{replaying ? `REPLAY ${displayedState}` : run.state}</span>
-            <span className={`rounded-md border px-3 py-2 text-xs font-bold ${severityTone[severity]}`}>Compliance {severity}</span>
-            <span className={`rounded-md border px-3 py-2 text-xs font-bold ${verified ? "border-emerald-400/60 bg-emerald-950/40 text-emerald-100" : "border-slate-600 bg-slate-900 text-slate-300"}`}>
-              {verified ? "✓ Verified Evidence" : "⏳ Evidence Pending"}
-            </span>
-          </div>
-          <h2 className="mt-4 text-2xl font-bold text-white">{run.runLabel}</h2>
-          <p className="mt-3 max-w-3xl text-base leading-6 text-slate-200">{run.runStatusMessage}</p>
-          <p className="mt-3 text-[11px] text-slate-500 font-mono break-all">{run.runId} | {run.lastCheckpoint || "NO_CHECKPOINT"} | {run.orchestratorVersion}</p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          {run.state === "WAITING_APPROVAL" && (
-            <button
-              onClick={() => handleApprovalAction("approve")}
-              disabled={isLoading || replaying}
-              className="inline-flex items-center gap-2 rounded-md bg-indigo-500 px-4 py-3 text-sm font-bold text-white hover:bg-indigo-400 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-            >
-              <UserCheck size={16} />
-              Approve Execution
             </button>
-          )}
-          <button
-            onClick={replaying ? stopReplay : startReplay}
-            disabled={run.telemetry.length === 0 && !replaying}
-            className="inline-flex items-center gap-2 rounded-md border border-white/20 bg-white/5 px-4 py-3 text-sm font-bold text-slate-100 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <RefreshCw size={16} />
-            {replaying ? "Exit Replay" : "Replay Run"}
-          </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/[0.05] bg-white/[0.02] p-4">
+        <div>
+          <p className="text-sm font-semibold text-white">{selected.size} teams selected</p>
+          <p className="text-[10px] text-[#52525B] mt-0.5">Deselect any team you don't need · All teams work in parallel</p>
         </div>
+        <button onClick={() => onApprove([...selected])} disabled={selected.size === 0}
+          className="flex items-center gap-2 rounded-xl bg-white text-black px-5 py-3 text-[12px] font-bold hover:bg-emerald-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:shadow-[0_0_20px_rgba(255,255,255,0.15)] active:scale-95">
+          <ArrowRight size={14} />Confirm Team → Start Discovery
+        </button>
       </div>
-      <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
-        <HeroMetric label="Execution Confidence" value={`${metrics.confidence}%`} />
-        <HeroMetric label="Latency" value={`${metrics.latencyMs}ms`} />
-        <HeroMetric label="Artifacts" value={String(run.artifacts.length)} />
-        <HeroMetric label="Transitions" value={String(run.transitions.length)} />
-        <HeroMetric label="Context Health" value={metrics.contextHealth} />
-      </div>
-    </section>
+    </div>
   );
 }
 
-function AgentGraph({
-  run,
-  replaying,
-  replayState,
-  visibleTransitions,
+/* ── Stage 3: Clarification Q&A ─────────────────────────── */
+
+function ClarificationStage({
+  session, onAnswer, onSkipAll,
 }: {
-  run: MonkRun;
-  replaying: boolean;
-  replayState: RunState | null;
-  visibleTransitions: MonkRun["transitions"];
+  session: MonkSession;
+  onAnswer: (qId: string, answer: string | null, skipped?: boolean) => void;
+  onSkipAll: () => void;
 }) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState<string | null>(null);
+  const questions = session.clarificationQuestions;
+  const answered = new Set(session.clarificationAnswers.map(a => a.questionId));
+  const nextQuestion = questions.find(q => !answered.has(q.id));
+  const totalAnswered = session.clarificationAnswers.length;
+  const totalQuestions = questions.length;
+
+  if (questions.length === 0) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <SectionHeader icon={<MessageSquare size={18} className="text-violet-400" />} title="Discovery Questions" subtitle="Loading questions…" />
+        <ProcessingCard label="Discovery Engine" detail="Generating targeted questions to understand your vision..." />
+      </div>
+    );
+  }
+
+  async function submitAnswer(q: ClarificationQuestion) {
+    setSubmitting(q.id);
+    const ans = answers[q.id]?.trim() || null;
+    await onAnswer(q.id, ans || null, !ans);
+    setSubmitting(null);
+  }
+
+  async function skipQuestion(q: ClarificationQuestion) {
+    setSubmitting(q.id);
+    await onAnswer(q.id, null, true);
+    setSubmitting(null);
+  }
+
   return (
-    <div className="space-y-3">
-      {flowNodes.map((node, index) => {
-        const status = getNodeStatus(run, node.state, replaying, replayState, visibleTransitions);
+    <div className="max-w-2xl mx-auto space-y-6">
+      <SectionHeader icon={<MessageSquare size={18} className="text-violet-400" />} title="Discovery Questions"
+        subtitle={`${totalAnswered} of ${totalQuestions} answered · AI decides for skipped ones`} />
+
+      {/* Progress */}
+      <div className="h-2 w-full bg-white/[0.05] rounded-full overflow-hidden">
+        <div className="h-full bg-gradient-to-r from-violet-500 to-indigo-400 rounded-full transition-all duration-500"
+          style={{ width: `${(totalAnswered / Math.max(1, totalQuestions)) * 100}%` }} />
+      </div>
+
+      {/* Answered questions */}
+      {session.clarificationAnswers.map(a => {
+        const q = questions.find(q => q.id === a.questionId);
+        if (!q) return null;
         return (
-          <div key={node.state} className="relative">
-            {index < flowNodes.length - 1 && <div className={`absolute left-[19px] top-12 h-6 w-px transition-colors duration-300 ${status.connectorClass}`} />}
-            <div className={`flex items-center gap-3 rounded-md border p-4 transition-all duration-300 ${status.className}`}>
-              <div className={`flex h-10 w-10 items-center justify-center rounded-full border-2 flex-shrink-0 transition-all duration-300 ${status.dotClass}`}>
-                {status.kind === "done" ? <CheckCircle2 size={18} /> : status.kind === "blocked" ? <Lock size={18} /> : <CircleDot size={18} />}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-base font-bold text-white">{node.label}</p>
-                <p className="truncate text-xs text-slate-400">{node.agent}</p>
-              </div>
-              <span className={`text-[11px] font-bold uppercase whitespace-nowrap ${status.labelClass}`}>{status.label}</span>
-            </div>
+          <div key={a.questionId} className="rounded-2xl border border-emerald-500/15 bg-emerald-500/[0.03] p-4">
+            <p className="text-[11px] font-bold text-emerald-400/70 mb-2">{q.question}</p>
+            <p className="text-sm text-[#A1A1AA]">{a.skipped ? "↷ Skipped — AI will decide" : a.answer}</p>
           </div>
         );
       })}
-    </div>
-  );
-}
 
-function GateStatus({
-  run,
-  replaying,
-  visibleApprovalEvents,
-  approvalEdits,
-  setApprovalEdits,
-  handleApprovalAction,
-  isLoading,
-}: {
-  run: MonkRun;
-  replaying: boolean;
-  visibleApprovalEvents: MonkRun["telemetry"];
-  approvalEdits: { runLabel: string; apiRouteName: string };
-  setApprovalEdits: (edits: { runLabel: string; apiRouteName: string }) => void;
-  handleApprovalAction: (action: "approve" | "reject" | "request_revision") => void;
-  isLoading: boolean;
-}) {
-  if (run.state === "BLOCKED") {
-    return (
-      <div className="rounded-md border border-red-400/50 bg-red-950/40 p-4">
-        <p className="flex items-center gap-2 text-base font-bold text-red-100"><AlertTriangle size={18} />Blocked by Compliance</p>
-        <p className="mt-3 text-sm leading-6 text-red-50">{run.compliance?.reason}</p>
-      </div>
-    );
-  }
-
-  if (run.approval.approved) {
-    return (
-      <div className="rounded-md border border-emerald-400/40 bg-emerald-950/30 p-4">
-        <p className="flex items-center gap-2 text-base font-bold text-emerald-100"><CheckCircle2 size={18} />Approved and Executing</p>
-        <p className="mt-3 text-sm leading-6 text-emerald-50">Execution approval committed by ORCHESTRATOR.</p>
-        {replaying && (
-          <ReplayApprovalEvents visibleApprovalEvents={visibleApprovalEvents} />
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4 rounded-md border border-indigo-400/50 bg-indigo-950/30 p-4">
-      <div>
-        <p className="flex items-center gap-2 text-base font-bold text-indigo-100"><UserCheck size={18} />Human Approval Interrupt</p>
-        <p className="mt-3 text-sm leading-6 text-indigo-50">Execution is paused before filesystem writes. Review proposed mutations, optionally edit safe shared memory, then resume or stop.</p>
-      </div>
-
-      {replaying && <ReplayApprovalEvents visibleApprovalEvents={visibleApprovalEvents} />}
-
-      <div className="rounded border border-indigo-400/20 bg-indigo-950/20 p-4 transition-colors hover:border-indigo-400/40">
-        <p className="text-xs uppercase tracking-widest font-bold text-indigo-300/70">Pending Action</p>
-        <p className="mt-2 text-sm font-semibold text-white">Commit proposed mutations to <span className="text-emerald-300 break-all">runs/{run.runId}/app</span></p>
-        <p className="mt-2 text-xs text-indigo-200/60">Next execution step: <span className="font-mono text-[10px]">ENGINEERING &rarr; VERIFYING</span></p>
-      </div>
-
-      <div className="rounded border border-white/10 bg-[#080c13] p-4">
-        <p className="text-xs uppercase tracking-widest font-bold text-slate-400">Why Approval Is Needed</p>
-        <p className="mt-2 text-sm leading-6 text-slate-200">Compliance severity is <span className="font-bold text-white">{run.compliance?.severity || "PENDING"}</span>. The orchestrator requires explicit human consent before external side effects.</p>
-      </div>
-
-      <div>
-        <p className="text-xs uppercase tracking-widest font-bold text-slate-400">Affected State Fields</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {["runLabel", "productIntent.routes", "proposedMutations.path", "proposedMutations.content"].map((field) => (
-            <span key={field} className="rounded border border-white/10 bg-[#0b1018] px-3 py-1.5 text-xs font-medium text-slate-300">{field}</span>
-          ))}
-        </div>
-      </div>
-
-      {run.state === "WAITING_APPROVAL" && (
-        <>
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="block">
-              <span className="text-xs uppercase tracking-widest font-bold text-slate-400">Run Label</span>
-              <input
-                value={approvalEdits.runLabel}
-                onChange={(event) => setApprovalEdits({ ...approvalEdits, runLabel: event.target.value })}
-                disabled={isLoading || replaying}
-                className="mt-2 w-full rounded-md border border-white/10 bg-[#080c13] px-3 py-3 text-sm text-white outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/50 transition-colors"
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs uppercase tracking-widest font-bold text-slate-400">API Route Name</span>
-              <input
-                value={approvalEdits.apiRouteName}
-                onChange={(event) => setApprovalEdits({ ...approvalEdits, apiRouteName: event.target.value })}
-                placeholder="billing"
-                disabled={isLoading || replaying}
-                className="mt-2 w-full rounded-md border border-white/10 bg-[#080c13] px-3 py-3 text-sm text-white outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/50 transition-colors"
-              />
-            </label>
+      {/* Current question */}
+      {nextQuestion && (
+        <div className="rounded-2xl border border-violet-500/25 bg-violet-500/[0.04] p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="h-6 w-6 rounded-full border border-violet-500/30 bg-violet-500/15 flex items-center justify-center">
+              <span className="text-[9px] font-bold text-violet-400">{totalAnswered + 1}</span>
+            </div>
+            <p className="text-sm font-bold text-white">{nextQuestion.question}</p>
           </div>
-
-          <div>
-            <p className="mb-3 text-xs uppercase tracking-widest font-bold text-slate-400">Proposed Mutations Before Approval</p>
-            <div className="max-h-48 space-y-2 overflow-y-auto pr-2">
-              {run.proposedMutations.map((mutation) => (
-                <div key={mutation.path} className="rounded border border-white/10 bg-[#080c13] p-3">
-                  <p className="text-xs font-semibold text-white break-all">{previewMutationPath(mutation.path, approvalEdits.apiRouteName)}</p>
-                  <p className="mt-2 text-xs text-slate-400 break-words">{mutation.diffSummary}</p>
-                </div>
+          {nextQuestion.context && <p className="text-[11px] text-[#71717A] mb-4 pl-8">{nextQuestion.context}</p>}
+          {nextQuestion.examples && (
+            <div className="flex flex-wrap gap-1.5 mb-4 pl-8">
+              {nextQuestion.examples.map(ex => (
+                <button key={ex} onClick={() => setAnswers(prev => ({ ...prev, [nextQuestion.id]: ex }))}
+                  className="rounded-full border border-violet-500/20 bg-violet-500/8 px-2.5 py-1 text-[10px] text-violet-300 hover:bg-violet-500/15 transition-all">
+                  {ex}
+                </button>
               ))}
             </div>
+          )}
+          <div className="flex gap-2.5 pl-8">
+            <textarea
+              value={answers[nextQuestion.id] || ""}
+              onChange={e => setAnswers(prev => ({ ...prev, [nextQuestion.id]: e.target.value }))}
+              placeholder="Type your answer…"
+              rows={2}
+              className="flex-1 resize-none rounded-xl border border-white/[0.07] bg-white/[0.03] px-4 py-3 text-sm text-white placeholder:text-[#3F3F46] focus:outline-none focus:border-violet-500/30 leading-relaxed"
+            />
           </div>
-
-          <div className="flex flex-wrap gap-3 pt-2">
-            <button
-              onClick={() => handleApprovalAction("approve")}
-              disabled={isLoading || replaying}
-              className="inline-flex items-center gap-2 rounded-md bg-indigo-500 px-4 py-3 text-sm font-bold text-white hover:bg-indigo-400 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-            >
-              <UserCheck size={16} />
-              Approve and Resume
+          <div className="flex items-center gap-2 mt-3 pl-8">
+            <button onClick={() => submitAnswer(nextQuestion)} disabled={submitting === nextQuestion.id}
+              className="flex items-center gap-2 rounded-xl bg-white text-black px-4 py-2.5 text-[11px] font-bold hover:bg-violet-50 disabled:opacity-30 transition-all">
+              {submitting === nextQuestion.id ? <Loader2 size={12} className="animate-spin" /> : <ArrowRight size={12} />}Submit
             </button>
-            <button
-              onClick={() => handleApprovalAction("request_revision")}
-              disabled={isLoading || replaying}
-              className="inline-flex items-center gap-2 rounded-md border border-white/20 bg-white/5 px-4 py-3 text-sm font-bold text-slate-200 hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-            >
-              Request Revision
-            </button>
-            <button
-              onClick={() => handleApprovalAction("reject")}
-              disabled={isLoading || replaying}
-              className="inline-flex items-center gap-2 rounded-md border border-red-400/50 bg-red-950/30 px-4 py-3 text-sm font-bold text-red-100 hover:bg-red-950/50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-            >
-              Reject
+            {nextQuestion.skippable && (
+              <button onClick={() => skipQuestion(nextQuestion)} disabled={submitting === nextQuestion.id}
+                className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-2.5 text-[11px] font-semibold text-[#71717A] hover:text-white hover:border-white/[0.1] transition-all">
+                Skip →
+              </button>
+            )}
+            <button onClick={onSkipAll}
+              className="ml-auto rounded-xl border border-white/[0.04] px-3 py-2.5 text-[10px] text-[#3F3F46] hover:text-[#71717A] transition-all">
+              Skip All & Let AI Decide
             </button>
           </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function ReplayApprovalEvents({ visibleApprovalEvents }: { visibleApprovalEvents: MonkRun["telemetry"] }) {
-  return (
-    <div className="mt-4 rounded border border-white/10 bg-black/20 p-3">
-      <p className="text-xs uppercase tracking-widest font-bold text-slate-500">Replay Approval Checkpoints</p>
-      {visibleApprovalEvents.length === 0 ? (
-        <p className="mt-2 text-xs text-slate-400">Approval checkpoint has not appeared in replay yet.</p>
-      ) : (
-        <div className="mt-3 space-y-2">
-          {visibleApprovalEvents.map((event) => (
-            <p key={event.id} className="text-xs text-slate-300 telemetry-event">
-              <span className="font-semibold text-emerald-300">{event.event}</span> — {event.detail}
-            </p>
-          ))}
         </div>
       )}
     </div>
   );
 }
 
-function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
+/* ── Stage 4: Document Draft ─────────────────────────────── */
+
+function DocumentDraftStage({ session }: { session: MonkSession }) {
+  const sections = [
+    "Executive Summary", "Problem Statement", "Solution", "Vision & Mission",
+    "Target Market", "Features", "Competitor Analysis", "Tech Stack",
+    "Roadmap & Timeline", "Budget", "Go-to-Market Strategy", "Risk Assessment",
+  ];
+
   return (
-    <section className="rounded-lg border border-white/10 bg-[#111722] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
-      <div className="mb-5 flex items-center justify-between gap-4">
-        <h2 className="text-base font-bold text-white">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Signal({ label, value, emphasis = false }: { label: string; value: string; emphasis?: boolean }) {
-  return (
-    <div className={`rounded-md border px-4 py-3 ${emphasis ? "border-emerald-400/50 bg-emerald-950/30 ring-1 ring-emerald-400/30" : "border-white/10 bg-[#080c13]"}`}>
-      <p className="text-[10px] uppercase tracking-widest font-bold text-slate-500">{label}</p>
-      <p className="mt-2 text-base font-bold text-white">{value}</p>
-    </div>
-  );
-}
-
-function HeroMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border border-white/10 bg-[#0b1018] px-4 py-3">
-      <p className="text-[10px] uppercase tracking-widest font-bold text-slate-500">{label}</p>
-      <p className="mt-2 text-lg font-bold text-white">{value}</p>
-    </div>
-  );
-}
-
-function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="rounded-md border border-white/10 bg-[#0b1018] p-4">
-      <div className="flex items-center gap-3 text-slate-400">{icon}<span className="text-xs font-semibold">{label}</span></div>
-      <p className="mt-3 text-xl font-bold text-white">{value}</p>
-    </div>
-  );
-}
-
-function InfoRow({ icon, label, value, detail }: { icon: React.ReactNode; label: string; value: string; detail: string }) {
-  return (
-    <div className="rounded-md border border-white/10 bg-[#0b1018] p-4">
-      <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">{icon}{label}</div>
-      <p className="mt-2 text-base font-bold text-white">{value}</p>
-      <p className="mt-2 break-words text-xs text-slate-400">{detail}</p>
-    </div>
-  );
-}
-
-function IconButton({ title, onClick, icon }: { title: string; onClick: () => void; icon: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-slate-300 hover:bg-white/10 transition-colors"
-      title={title}
-    >
-      {icon}
-    </button>
-  );
-}
-
-function EvidenceSection({
-  title,
-  status,
-  icon,
-  tone,
-  children,
-  compact = false,
-}: {
-  title: string;
-  status: string;
-  icon: React.ReactNode;
-  tone: "emerald" | "blue" | "red" | "slate";
-  children: React.ReactNode;
-  compact?: boolean;
-}) {
-  const toneClass = {
-    emerald: "border-emerald-400/40 bg-emerald-950/25 text-emerald-100",
-    blue: "border-blue-400/40 bg-blue-950/25 text-blue-100",
-    red: "border-red-400/45 bg-red-950/30 text-red-100",
-    slate: "border-white/10 bg-[#0b1018] text-slate-100",
-  }[tone];
-
-  if (compact) {
-    return (
-      <div>
-        <div className="mb-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            {icon}
-            <h4 className="text-sm font-bold text-white">{title}</h4>
+    <div className="max-w-2xl mx-auto space-y-6">
+      <SectionHeader icon={<FileText size={18} className="text-indigo-400" />} title="Building Your Startup Document"
+        subtitle="MONK AI is generating a comprehensive startup plan tailored to your vision" />
+      <ProcessingCard label="Document Architect" detail="Writing your complete startup document with all sections…" />
+      <div className="grid grid-cols-2 gap-2">
+        {sections.map((s, i) => (
+          <div key={s} className="rounded-xl border border-white/[0.04] bg-white/[0.01] px-3 py-2.5 flex items-center gap-2">
+            <div className="h-1.5 w-1.5 rounded-full bg-white/[0.08] animate-pulse" style={{ animationDelay: `${i * 150}ms` }} />
+            <span className="text-[10px] text-[#52525B] font-medium">{s}</span>
           </div>
-          <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase ${
-            tone === "emerald" ? "bg-emerald-950 text-emerald-200" :
-            tone === "blue" ? "bg-blue-950 text-blue-200" :
-            tone === "red" ? "bg-red-950 text-red-200" :
-            "bg-slate-800 text-slate-300"
-          }`}>
-            {status}
-          </span>
-        </div>
-        {children}
-      </div>
-    );
-  }
-
-  return (
-    <section className={`rounded-md border p-4 ${toneClass}`}>
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          {icon}
-          <h3 className="text-base font-bold text-white">{title}</h3>
-        </div>
-        <span className="rounded border border-white/10 bg-black/20 px-3 py-1 text-[11px] font-bold uppercase text-slate-200">
-          {status}
-        </span>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function EvidencePhaseHeader({ icon, phase, color }: { icon: React.ReactNode; phase: string; color: "emerald" | "blue" | "red" | "slate" }) {
-  const colorClass = {
-    emerald: "text-emerald-300",
-    blue: "text-blue-300",
-    red: "text-red-300",
-    slate: "text-slate-300",
-  }[color];
-
-  return (
-    <div className="flex items-center gap-3">
-      <div className={colorClass}>{icon}</div>
-      <h4 className="text-sm font-bold uppercase tracking-widest text-white">{phase}</h4>
-      <div className={`h-px flex-1 ${
-        color === "emerald" ? "bg-emerald-400/20" :
-        color === "blue" ? "bg-blue-400/20" :
-        color === "red" ? "bg-red-400/20" :
-        "bg-slate-400/20"
-      }`} />
-    </div>
-  );
-}
-
-function EvidenceStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded border border-white/10 bg-black/40 p-4 text-center">
-      <p className="text-[10px] uppercase tracking-widest font-bold text-slate-500">{label}</p>
-      <p className="mt-3 text-2xl font-bold text-white">{value}</p>
-    </div>
-  );
-}
-
-function EvidenceList({ values }: { values: string[] }) {
-  return (
-    <div>
-      <div className="flex flex-wrap gap-2">
-        {values.map((value) => (
-          <span key={value} className="rounded border border-emerald-400/20 bg-emerald-950/20 px-3 py-1.5 text-xs font-medium text-emerald-200">{value}</span>
         ))}
       </div>
     </div>
   );
 }
 
-function VerificationBadge({ status }: { status: "PENDING" | "PASSED" | "FAILED" }) {
-  const config = {
-    PASSED: { bg: "bg-emerald-950", border: "border-emerald-400/30", text: "text-emerald-200", icon: <CheckCircle2 size={12} />, label: "PASSED" },
-    FAILED: { bg: "bg-red-950", border: "border-red-400/30", text: "text-red-200", icon: <XCircle size={12} />, label: "FAILED" },
-    PENDING: { bg: "bg-slate-800", border: "border-slate-600/30", text: "text-slate-300", icon: <CircleDot size={12} />, label: "PENDING" },
-  };
-  const c = config[status];
+/* ── Stage 5: Document Review ────────────────────────────── */
+
+function DocumentReviewStage({
+  session, onReview, onDownload,
+}: {
+  session: MonkSession;
+  onReview: (action: "APPROVE" | "MODIFY" | "REFRAME", mods?: string) => void;
+  onDownload: (doc: StartupDocument) => void;
+}) {
+  const [modText, setModText] = useState("");
+  const [showModInput, setShowModInput] = useState(false);
+  const doc = session.startupDocument;
+  if (!doc) return <LoadingStage label="Loading document..." />;
+
   return (
-    <span className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${c.bg} ${c.border} ${c.text}`}>
-      {c.icon}
-      {c.label}
-    </span>
+    <div className="max-w-3xl mx-auto space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <SectionHeader icon={<Eye size={18} className="text-indigo-400" />} title="Review Your Startup Document"
+          subtitle={`${session.documentRevisions.length > 0 ? `Revision ${session.documentRevisions.length}` : "First Draft"} · Review, modify, or reframe before teams begin work`} />
+        <button onClick={() => onDownload(doc)}
+          className="shrink-0 flex items-center gap-1.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2 text-[10px] font-bold text-[#71717A] hover:text-white hover:border-white/[0.1] transition-all uppercase tracking-wider">
+          <Download size={11} /> Download
+        </button>
+      </div>
+
+      <DocumentViewer doc={doc} />
+
+      {/* Actions */}
+      {showModInput ? (
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.03] p-5 space-y-4">
+          <p className="text-sm font-bold text-white">What would you like to change?</p>
+          <textarea
+            value={modText} onChange={e => setModText(e.target.value)}
+            placeholder="e.g., Add more focus on B2B enterprise customers, change the tech stack to use Python, add more competitive analysis…"
+            rows={3}
+            className="w-full resize-none rounded-xl border border-white/[0.07] bg-white/[0.03] px-4 py-3 text-sm text-white placeholder:text-[#3F3F46] focus:outline-none focus:border-amber-500/30 leading-relaxed"
+          />
+          <div className="flex items-center gap-2">
+            <button onClick={() => { onReview("MODIFY", modText); setShowModInput(false); }} disabled={!modText.trim()}
+              className="flex items-center gap-2 rounded-xl bg-amber-500 text-black px-5 py-2.5 text-[11px] font-bold hover:bg-amber-400 disabled:opacity-30 transition-all">
+              <RefreshCw size={12} />Rebuild with Changes
+            </button>
+            <button onClick={() => setShowModInput(false)} className="rounded-xl border border-white/[0.06] px-4 py-2.5 text-[11px] text-[#71717A] hover:text-white transition-all">Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <button onClick={() => onReview("APPROVE")}
+            className="flex flex-col items-center gap-2 rounded-2xl border border-emerald-500/25 bg-emerald-500/8 p-5 hover:bg-emerald-500/15 hover:shadow-[0_0_30px_rgba(16,185,129,0.12)] transition-all group">
+            <CheckCircle2 size={22} className="text-emerald-400 group-hover:scale-110 transition-transform" />
+            <span className="text-sm font-bold text-emerald-300">Approve & Launch Teams</span>
+            <span className="text-[10px] text-[#52525B] text-center">All teams will start working immediately</span>
+          </button>
+          <button onClick={() => setShowModInput(true)}
+            className="flex flex-col items-center gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-5 hover:bg-amber-500/8 transition-all group">
+            <Edit3 size={22} className="text-amber-400 group-hover:scale-110 transition-transform" />
+            <span className="text-sm font-bold text-amber-300">Modify</span>
+            <span className="text-[10px] text-[#52525B] text-center">Tell AI what to change and regenerate</span>
+          </button>
+          <button onClick={() => onReview("REFRAME")}
+            className="flex flex-col items-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/[0.04] p-5 hover:bg-red-500/8 transition-all group">
+            <RefreshCw size={22} className="text-red-400 group-hover:scale-110 transition-transform" />
+            <span className="text-sm font-bold text-red-300">Reframe Everything</span>
+            <span className="text-[10px] text-[#52525B] text-center">Start fresh with a completely new approach</span>
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
-function getNodeStatus(
-  run: MonkRun,
-  state: RunState,
-  replaying: boolean,
-  replayState: RunState | null,
-  visibleTransitions: MonkRun["transitions"]
-) {
-  const activeState = replaying && replayState ? replayState : run.state;
+/* ── Stage 6-9: Parallel Execution ──────────────────────── */
 
-  if (activeState === "BLOCKED" && state !== "PLANNING" && state !== "COMPLIANCE_REVIEW") {
-    return {
-      kind: "blocked",
-      label: "blocked",
-      className: "border-red-400/50 bg-red-950/30 shadow-[0_0_20px_rgba(239,68,68,0.15)]",
-      dotClass: "border-red-400 bg-red-500/30 text-red-100",
-      connectorClass: "bg-red-400/40",
-      labelClass: "text-red-200",
-    };
-  }
+function ParallelExecutionStage({ session }: { session: MonkSession }) {
+  const teams = session.approvedTeams || session.proposedTeams;
+  const stage = session.stage;
 
-  if (activeState === state) {
-    return {
-      kind: "active",
-      label: "active",
-      className: "border-emerald-400/70 bg-emerald-950/40 shadow-[0_0_28px_rgba(52,211,153,0.22)]",
-      dotClass: "border-emerald-300 bg-emerald-400/50 text-emerald-900 animate-pulse",
-      connectorClass: "bg-emerald-400/80 shadow-[0_0_8px_rgba(52,211,153,0.5)] animate-pulse",
-      labelClass: "text-emerald-200 font-bold",
-    };
-  }
-
-  const completedStates = new Set((replaying ? visibleTransitions : run.transitions).map((transition) => transition.nextState));
-  if (completedStates.has(state) || (!replaying && run.state === "COMPLETED" && state === "COMPLETED")) {
-    return {
-      kind: "done",
-      label: "done",
-      className: "border-emerald-400/30 bg-[#0b1018]",
-      dotClass: "border-emerald-400/60 bg-emerald-950 text-emerald-300",
-      connectorClass: "bg-emerald-400/40",
-      labelClass: "text-emerald-300",
-    };
-  }
-
-  return {
-    kind: "waiting",
-    label: "waiting",
-    className: "border-white/10 bg-[#0b1018]",
-    dotClass: "border-slate-600 bg-slate-900 text-slate-500",
-    connectorClass: "bg-white/10",
-    labelClass: "text-slate-500",
+  const stageLabelMap: Record<string, string> = {
+    TEAM_DISPATCH: "Dispatching startup document to all departments…",
+    PARALLEL_EXECUTION: "All teams are working simultaneously on their deliverables…",
+    CROSS_FUNCTIONAL: "Teams are sharing insights and coordinating outputs…",
+    OUTPUT_COLLECTION: "Assembling all deliverables for final delivery…",
   };
+  const stageLabel = stageLabelMap[stage] ?? "Teams are working…";
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader icon={<Activity size={18} className="text-emerald-400" />} title="Teams Working"
+        subtitle={stageLabel} />
+
+      {/* Cross-functional links */}
+      {stage === "CROSS_FUNCTIONAL" && session.crossFunctionalLinks.length > 0 && (
+        <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.03] p-4">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-3">Cross-Team Data Flow</p>
+          <div className="space-y-2">
+            {session.crossFunctionalLinks.map((link, i) => (
+              <div key={i} className="flex items-center gap-2 text-[11px]">
+                <span className="font-semibold text-white">{link.fromTeam}</span>
+                <ArrowRight size={10} className="text-indigo-400" />
+                <span className="font-semibold text-white">{link.toTeam}</span>
+                <span className="text-[#71717A] ml-2">{link.dataType}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Team grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+        {teams.map(team => {
+          const colors = TEAM_COLORS[team.teamId];
+          const isDone = team.status === "DONE";
+          const isActive = team.status === "ACTIVE" || team.status === "REVIEWING";
+          const isBlocked = team.status === "BLOCKED";
+
+          return (
+            <div key={team.teamId} className={`rounded-2xl border p-4 transition-all ${
+              isDone ? `${colors.border} ${colors.bg}` :
+              isActive ? "border-white/[0.07] bg-white/[0.02]" :
+              isBlocked ? "border-red-500/20 bg-red-500/[0.03]" :
+              "border-white/[0.04] bg-white/[0.01] opacity-50"
+            }`}>
+              <div className="flex items-center gap-3 mb-3">
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${isDone ? `${colors.border} ${colors.bg} ${colors.text}` : "border-white/[0.06] text-[#3F3F46]"}`}>
+                  {TEAM_ICONS[team.teamId]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-bold text-white">{team.label}</p>
+                  <p className={`text-[9px] font-bold uppercase tracking-wider mt-0.5 ${
+                    isDone ? colors.text : isActive ? "text-blue-400" : isBlocked ? "text-red-400" : "text-[#3F3F46]"
+                  }`}>{team.status}</p>
+                </div>
+                {isActive && <Loader2 size={13} className="text-blue-400 animate-spin shrink-0" />}
+                {isDone && <CheckCircle2 size={13} className={`${colors.text} shrink-0`} />}
+              </div>
+
+              {/* Progress bar */}
+              <div className="h-1 w-full bg-white/[0.05] rounded-full overflow-hidden mb-2">
+                <div className={`h-full rounded-full transition-all duration-700 ${isDone ? "bg-emerald-400" : isActive ? "bg-blue-400" : "bg-white/[0.1]"}`}
+                  style={{ width: `${team.progress}%` }} />
+              </div>
+
+              <p className="text-[9px] text-[#52525B] leading-snug">{team.currentTask}</p>
+
+              {/* Recent activity */}
+              {team.activities.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {team.activities.slice(-2).map(a => (
+                    <p key={a.id} className={`text-[8px] leading-snug ${a.type === "CROSS_FUNCTIONAL" ? "text-indigo-400/70" : a.type === "OUTPUT_READY" ? "text-emerald-400/70" : "text-[#3F3F46]"}`}>
+                      {a.type === "CROSS_FUNCTIONAL" && "↔ "}{a.message}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Overall progress */}
+      <div className="rounded-2xl border border-white/[0.05] bg-white/[0.01] p-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-[#52525B]">Overall Progress</span>
+          <span className="text-sm font-semibold text-white">{Math.round(session.overallProgress)}%</span>
+        </div>
+        <div className="h-2 w-full bg-white/[0.04] rounded-full overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-1000"
+            style={{ width: `${session.overallProgress}%`, boxShadow: "0 0 10px rgba(16,185,129,0.5)" }} />
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function getRunMetrics(run: MonkRun | null) {
-  if (!run) {
-    return { latencyMs: 0, confidence: 0, tokenCost: "$0.000", contextHealth: "Idle" };
+/* ── Stage 10: Complete ───────────────────────────────────── */
+
+function CompleteStage({
+  session, onViewOutput, onDownloadOutput, onDownloadDocument,
+}: {
+  session: MonkSession;
+  onViewOutput: (o: MonkSession["teamOutputs"][0]) => void;
+  onDownloadOutput: (o: MonkSession["teamOutputs"][0]) => void;
+  onDownloadDocument: (doc: StartupDocument) => void;
+}) {
+  const doc = session.startupDocument;
+  const outputs = session.teamOutputs;
+
+  const OUTPUT_LABELS: Record<string, { icon: React.ReactNode; color: string }> = {
+    PRD:                  { icon: <FileText size={16} />,    color: "text-cyan-400" },
+    TRD:                  { icon: <Code2 size={16} />,       color: "text-emerald-400" },
+    WEBSITE_CODE:         { icon: <Globe size={16} />,       color: "text-emerald-400" },
+    DESIGN_SYSTEM:        { icon: <PenTool size={16} />,     color: "text-violet-400" },
+    COMPETITOR_ANALYSIS:  { icon: <BarChart3 size={16} />,   color: "text-fuchsia-400" },
+    MARKET_GUIDE:         { icon: <TrendingUp size={16} />,  color: "text-amber-400" },
+    FINANCIAL_PROJECTIONS:{ icon: <DollarSign size={16} />,  color: "text-yellow-400" },
+    LEGAL_CHECKLIST:      { icon: <Scale size={16} />,       color: "text-amber-400" },
+    RD_REPORT:            { icon: <Microscope size={16} />,  color: "text-purple-400" },
+    GTM_STRATEGY:         { icon: <Megaphone size={16} />,   color: "text-pink-400" },
+    USER_PERSONAS:        { icon: <Users size={16} />,       color: "text-blue-400" },
+    STARTUP_DOCUMENT:     { icon: <FileText size={16} />,    color: "text-white" },
+  };
+
+  function downloadAll() {
+    outputs.forEach((o, i) => {
+      setTimeout(() => onDownloadOutput(o), i * 300);
+    });
+    if (doc) setTimeout(() => onDownloadDocument(doc), outputs.length * 300 + 300);
   }
 
-  const latencyMs = Math.max(0, new Date(run.updatedAt).getTime() - new Date(run.createdAt).getTime());
-  const passedArtifacts = run.artifacts.filter((artifact) => artifact.verificationStatus === "PASSED").length;
-  const confidence = run.state === "BLOCKED" ? 98 : run.artifacts.length ? Math.round((passedArtifacts / run.artifacts.length) * 100) : 72;
-  const tokenCost = `$${((run.telemetry.length * 0.0008) + (run.artifacts.length * 0.0012)).toFixed(3)}`;
-  const contextHealth = run.state === "BLOCKED" ? "Governed" : run.evidence ? "Healthy" : "Building";
+  return (
+    <div className="space-y-6 max-w-4xl mx-auto">
+      {/* Hero */}
+      <div className="relative overflow-hidden rounded-3xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 to-teal-500/5 p-8 text-center">
+        <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-teal-500/5 pointer-events-none" />
+        <div className="relative z-10">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/15 border border-emerald-500/25">
+            <CheckCircle2 size={32} className="text-emerald-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">Your Startup is Ready!</h2>
+          <p className="text-[#71717A] mb-6">{outputs.length} deliverables across {(session.approvedTeams || session.proposedTeams).length} departments · {outputs.reduce((s, o) => s + (o.wordCount || 0), 0).toLocaleString()} total words generated</p>
+          <button onClick={downloadAll}
+            className="inline-flex items-center gap-2 rounded-xl bg-white text-black px-6 py-3 text-[13px] font-bold hover:bg-emerald-50 transition-all hover:shadow-[0_0_25px_rgba(255,255,255,0.15)] active:scale-95">
+            <Download size={15} />Download All Deliverables
+          </button>
+        </div>
+      </div>
 
-  return { latencyMs, confidence, tokenCost, contextHealth };
+      {/* Startup Document Summary */}
+      {doc && (
+        <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <FileText size={15} className="text-indigo-400" />
+              <h3 className="text-sm font-bold text-white">Startup Document</h3>
+            </div>
+            <button onClick={() => onDownloadDocument(doc)}
+              className="flex items-center gap-1.5 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-1.5 text-[9px] font-bold text-[#71717A] hover:text-white uppercase tracking-wider transition-all">
+              <Download size={9} />Download
+            </button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { label: "Features", value: doc.features.length },
+              { label: "Competitors", value: doc.competitorAnalysis.length },
+              { label: "Milestones", value: doc.roadmap.length },
+              { label: "KPIs", value: doc.kpis.length },
+            ].map(m => (
+              <div key={m.label} className="rounded-xl border border-white/[0.04] bg-white/[0.01] p-3 text-center">
+                <p className="text-xl font-bold text-white">{m.value}</p>
+                <p className="text-[9px] text-[#52525B] mt-0.5 uppercase tracking-wider">{m.label}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-[11px] text-[#A1A1AA] leading-relaxed">{doc.executiveSummary}</p>
+        </div>
+      )}
+
+      {/* All outputs grid */}
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-[#3F3F46] mb-3">All Team Deliverables</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {outputs.map((output, i) => {
+            const meta = OUTPUT_LABELS[output.outputType] || { icon: <FileText size={16} />, color: "text-white" };
+            const colors = TEAM_COLORS[output.teamId];
+            return (
+              <div key={`${output.teamId}-${i}`} className={`rounded-2xl border ${colors.border} ${colors.bg} p-4`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${colors.border} ${colors.bg} ${meta.color}`}>
+                      {meta.icon}
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold text-white">{output.title}</p>
+                      <p className={`text-[8px] font-bold uppercase tracking-widest mt-0.5 ${colors.text}`}>{output.teamId}</p>
+                      <p className="text-[9px] text-[#52525B] mt-1">{output.wordCount?.toLocaleString()} words</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button onClick={() => onViewOutput(output)} title="Preview"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.02] text-[#71717A] hover:text-white transition-all">
+                      <Eye size={12} />
+                    </button>
+                    <button onClick={() => onDownloadOutput(output)} title="Download"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.02] text-[#71717A] hover:text-white transition-all">
+                      <Download size={12} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function getCurrentApiRouteName(run: MonkRun) {
-  const apiRoute = run.productIntent?.routes.find((route) => route.startsWith("/api/"));
-  return apiRoute?.replace("/api/", "") || "";
+/* ── Failed Stage ─────────────────────────────────────────── */
+
+function FailedStage({ session }: { session: MonkSession }) {
+  return (
+    <div className="max-w-lg mx-auto text-center py-20 space-y-4">
+      <div className="mx-auto h-16 w-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+        <AlertTriangle size={28} className="text-red-400" />
+      </div>
+      <h2 className="text-xl font-bold text-white">Something went wrong</h2>
+      <p className="text-[13px] text-[#71717A] leading-relaxed">{session.failureReason || "An unexpected error occurred during processing."}</p>
+      <p className="text-[10px] text-[#3F3F46] font-mono">Session ID: {session.sessionId}</p>
+    </div>
+  );
 }
 
-function previewMutationPath(path: string, apiRouteName: string) {
-  const cleanRoute = apiRouteName
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
+/* ══════════════════════════════════════════════════════════════
+   DOCUMENT VIEWER
+   ══════════════════════════════════════════════════════════════ */
 
-  if (!cleanRoute || !path.startsWith("app/api/")) return path;
-  return `app/api/${cleanRoute}/route.ts`;
+function DocumentViewer({ doc }: { doc: StartupDocument }) {
+  const [expandedSection, setExpandedSection] = useState<string | null>("executiveSummary");
+
+  const sections = [
+    { key: "executiveSummary",   label: "Executive Summary",         content: <p className="text-[13px] text-[#A1A1AA] leading-relaxed">{doc.executiveSummary}</p> },
+    ...(doc.problemStatement ? [{ key: "problemStatement", label: "Problem Statement", content: <p className="text-[13px] text-[#A1A1AA] leading-relaxed">{doc.problemStatement}</p> }] : []),
+    { key: "solution",           label: "Solution",                  content: <p className="text-[13px] text-[#A1A1AA] leading-relaxed">{doc.solution}</p> },
+    { key: "visionMission",      label: "Vision & Mission",          content: <><p className="text-[13px] text-white font-semibold mb-1">Vision</p><p className="text-[13px] text-[#A1A1AA] leading-relaxed mb-3">{doc.vision}</p><p className="text-[13px] text-white font-semibold mb-1">Mission</p><p className="text-[13px] text-[#A1A1AA] leading-relaxed">{doc.mission}</p></> },
+    { key: "uvp",                label: "Unique Value Proposition",  content: <p className="text-[13px] text-emerald-300 leading-relaxed font-semibold">{doc.uniqueValueProposition}</p> },
+    { key: "features",           label: `Features (${doc.features.length})`, content: (
+      <div className="space-y-3">
+        {doc.features.map((f, i) => (
+          <div key={i} className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01]">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[11px] font-bold text-white">{f.name}</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-widest ${f.priority === "MUST_HAVE" ? "bg-emerald-500/10 text-emerald-400" : f.priority === "SHOULD_HAVE" ? "bg-amber-500/10 text-amber-400" : "bg-white/5 text-[#71717A]"}`}>{f.priority.replace("_", " ")}</span>
+            </div>
+            <p className="text-[11px] text-[#71717A] leading-relaxed">{f.description}</p>
+          </div>
+        ))}
+      </div>
+    ) },
+    { key: "competitors",        label: `Competitors (${doc.competitorAnalysis.length})`, content: (
+      <div className="space-y-3">
+        {doc.competitorAnalysis.map((c, i) => (
+          <div key={i} className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01]">
+            <p className="text-[12px] font-bold text-white mb-1">{c.name}</p>
+            <p className="text-[10px] text-emerald-400 mb-0.5">Our edge: {c.differentiator}</p>
+            <p className="text-[10px] text-red-400">Weakness: {c.weaknesses.join(", ")}</p>
+          </div>
+        ))}
+      </div>
+    ) },
+    { key: "roadmap",            label: `Roadmap (${doc.roadmap.length} phases)`, content: (
+      <div className="space-y-3">
+        {doc.roadmap.map((m, i) => (
+          <div key={i} className="p-3 rounded-xl border border-indigo-500/15 bg-indigo-500/[0.03]">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[12px] font-bold text-white">{m.name}</span>
+              <span className="text-[9px] text-indigo-400 font-mono">{m.duration}</span>
+            </div>
+            <ul className="space-y-1">{m.deliverables.map((d, j) => <li key={j} className="text-[10px] text-[#71717A] flex items-start gap-1.5"><span className="text-indigo-400 mt-0.5">▸</span>{d}</li>)}</ul>
+          </div>
+        ))}
+      </div>
+    ) },
+    { key: "budget",             label: `Budget (${doc.totalBudgetEstimate})`, content: (
+      <div className="space-y-2">
+        {doc.budget.map((b, i) => (
+          <div key={i} className="flex items-center justify-between p-2.5 rounded-xl border border-white/[0.04] bg-white/[0.01]">
+            <div><p className="text-[11px] font-semibold text-white">{b.category}</p><p className="text-[9px] text-[#52525B]">{b.notes}</p></div>
+            <span className="text-[11px] font-bold text-amber-300">{b.amount}</span>
+          </div>
+        ))}
+        <div className="flex items-center justify-between p-2.5 rounded-xl border border-amber-500/20 bg-amber-500/[0.04]">
+          <span className="text-[12px] font-bold text-white">Total Estimate</span>
+          <span className="text-[12px] font-bold text-amber-300">{doc.totalBudgetEstimate}</span>
+        </div>
+      </div>
+    ) },
+    { key: "gtm",                label: "Go-to-Market Strategy",     content: <p className="text-[13px] text-[#A1A1AA] leading-relaxed">{doc.goToMarket}</p> },
+    { key: "survival",           label: "Market Survival Guide",     content: <p className="text-[13px] text-emerald-200/70 leading-relaxed">{doc.marketSurvivalGuide}</p> },
+    { key: "kpis",               label: `KPIs & Metrics (${doc.kpis.length})`, content: (
+      <div className="space-y-2">{doc.kpis.map((k, i) => <div key={i} className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01]"><p className="text-[11px] font-bold text-white">{k.name}</p><p className="text-[10px] text-emerald-400 mt-0.5">Target: {k.target}</p><p className="text-[9px] text-[#52525B] mt-0.5">{k.measurement}</p></div>)}</div>
+    ) },
+  ];
+
+  return (
+    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.01] overflow-hidden divide-y divide-white/[0.04]">
+      {sections.map(sec => (
+        <div key={sec.key}>
+          <button onClick={() => setExpandedSection(expandedSection === sec.key ? null : sec.key)}
+            className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.02] transition-colors">
+            <span className="text-[11px] font-bold text-white uppercase tracking-wider">{sec.label}</span>
+            <ChevronDown size={13} className={`text-[#52525B] transition-transform ${expandedSection === sec.key ? "rotate-180" : ""}`} />
+          </button>
+          {expandedSection === sec.key && (
+            <div className="px-5 pb-5 pt-2">{sec.content}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
-function getReplayStepCount(run: MonkRun) {
-  return run.telemetry.length + (run.evidence ? 1 : 0);
+/* ══════════════════════════════════════════════════════════════
+   SHARED ATOMS
+   ══════════════════════════════════════════════════════════════ */
+
+function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle: string }) {
+  return (
+    <div className="flex items-start gap-3.5">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.03]">{icon}</div>
+      <div>
+        <h2 className="text-lg font-bold text-white">{title}</h2>
+        <p className="text-[12px] text-[#71717A] mt-0.5 leading-relaxed">{subtitle}</p>
+      </div>
+    </div>
+  );
 }
 
-function formatTime(value: string) {
-  return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+function ProcessingCard({ label, detail }: { label: string; detail: string }) {
+  return (
+    <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/[0.03] p-5 flex items-center gap-4">
+      <div className="relative flex h-12 w-12 shrink-0 items-center justify-center">
+        <div className="absolute inset-0 rounded-full border border-emerald-500/20 animate-ping opacity-40" />
+        <div className="relative h-8 w-8 rounded-full border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center">
+          <Loader2 size={16} className="text-emerald-400 animate-spin" />
+        </div>
+      </div>
+      <div>
+        <p className="text-sm font-bold text-white">{label}</p>
+        <p className="text-[11px] text-[#71717A] mt-0.5 leading-relaxed">{detail}</p>
+      </div>
+    </div>
+  );
+}
+
+function LoadingStage({ label }: { label: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-24 gap-4">
+      <Loader2 size={24} className="text-emerald-400 animate-spin" />
+      <p className="text-[13px] text-[#71717A]">{label}</p>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   UTILITY
+   ══════════════════════════════════════════════════════════════ */
+
+function formatDocumentAsMarkdown(doc: StartupDocument): string {
+  return `# Startup Document — ${doc.sector}
+Generated by MONK AI on ${new Date(doc.generatedAt).toLocaleDateString()}
+
+## Executive Summary
+${doc.executiveSummary}
+
+${doc.problemStatement ? `## Problem Statement\n${doc.problemStatement}\n` : ""}
+
+## Solution
+${doc.solution}
+
+## Vision
+${doc.vision}
+
+## Mission
+${doc.mission}
+
+## Unique Value Proposition
+${doc.uniqueValueProposition}
+
+## Target Market
+${doc.targetMarket}
+
+## Features
+${doc.features.map(f => `### ${f.name} [${f.priority}]
+${f.description}
+User Story: ${f.userStory}
+`).join("\n")}
+
+## Competitor Analysis
+${doc.competitorAnalysis.map(c => `### ${c.name}
+Strengths: ${c.strengths.join(", ")}
+Weaknesses: ${c.weaknesses.join(", ")}
+Our Edge: ${c.differentiator}
+`).join("\n")}
+
+## Tech Stack
+${doc.techStack.map(t => `- **${t.layer}**: ${t.technology} — ${t.reason}`).join("\n")}
+
+## Roadmap
+${doc.roadmap.map((m, i) => `### Phase ${i + 1}: ${m.name} (${m.duration})
+${m.deliverables.map(d => `- ${d}`).join("\n")}
+`).join("\n")}
+
+## Budget
+${doc.budget.map(b => `- **${b.category}**: ${b.amount} — ${b.notes}`).join("\n")}
+
+**Total Estimate: ${doc.totalBudgetEstimate}**
+
+## Go-to-Market Strategy
+${doc.goToMarket}
+
+## Market Survival Guide
+${doc.marketSurvivalGuide}
+
+## Risk Assessment
+${doc.riskAssessment.map(r => `### ${r.title}
+Impact: ${r.impact} | Likelihood: ${r.likelihood}
+Mitigation: ${r.mitigation}
+`).join("\n")}
+
+## KPIs
+${doc.kpis.map(k => `- **${k.name}**: Target ${k.target} | ${k.measurement}`).join("\n")}
+
+## User Personas
+${doc.userPersonas.map(p => `### ${p.name} (${p.age}, ${p.role})
+Pain Points: ${p.painPoints.join(", ")}
+Goals: ${p.goals.join(", ")}
+Tech Savviness: ${p.techSavviness}
+`).join("\n")}
+`;
 }

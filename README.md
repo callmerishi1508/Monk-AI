@@ -1,70 +1,115 @@
-# MONK AI: Governed Autonomous Execution MVP
+<div align="center">
+  <h1>MONK AI</h1>
+  <p><strong>Turn Any Idea Into a Company — Autonomous Execution Engine</strong></p>
+  <p>
+    <a href="https://github.com/callmerishi1508/Monk-AI/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
+    <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-15-black?logo=next.js" alt="Next.js" /></a>
+    <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-Ready-blue?logo=typescript" alt="TypeScript" /></a>
+    <img src="https://img.shields.io/badge/Status-MVP-success" alt="Status: MVP" />
+  </p>
+</div>
 
-MONK AI is a governed, deterministic autonomous orchestration system built for predictability, safety, and local observability. Rather than relying on non-deterministic generalized agent SDKs, MONK AI coordinates discrete, highly specialized agents through a rigid, replayable state machine.
+<br />
 
-This MVP demonstrates a safe "human-in-the-loop" execution pipeline where high-stakes product changes require explicit compliance checks and human approval before any filesystem side effects are permitted.
+> **MONK AI** is an advanced autonomous orchestration system designed to automate the earliest and hardest parts of building a startup. By leveraging a strict deterministic state machine, MONK AI coordinates multiple specialized AI agents (Product, Engineering, Design, Legal, Finance, etc.) to transform a single raw idea into a comprehensive suite of startup deliverables—from PRDs to Financial Models—in minutes.
 
-## Architecture & Core Concepts
+---
 
-MONK AI is built on a custom deterministic orchestrator running in a local-first Next.js environment. The system strictly enforces the following guarded state transitions:
+## ⚡ Core Features
 
-1.  **Product Manager (`PLANNING`)**: Synthesizes human intent into actionable product routes and requirements.
-2.  **Compliance Gatekeeper (`COMPLIANCE_REVIEW`)**: Evaluates the plan against safety heuristics. Identifies regulated or critical terms (e.g., "medical", "billing") and determines the severity.
-3.  **Human Approval (`WAITING_APPROVAL`)**: If the compliance severity requires it, execution pauses. The user is prompted to review the proposed mutations and either approve, edit shared memory (e.g., API route naming), or reject the run.
-4.  **Engineering Executor (`ENGINEERING`)**: Executes the approved plan by writing mutations directly to the local filesystem.
-5.  **Verification (`VERIFYING`)**: Validates the generated artifacts against deterministic safety checks and syntactical rules.
-6.  **Telemetry (`COMPLETED / FAILED`)**: Finalizes the run and packages the lifecycle into a replayable `state.json` payload, which populates the Evidence Vault.
+- **10-Stage Deterministic Pipeline**: A highly predictable execution graph that guides your idea from intake to final deliverables without hallucination loops.
+- **Dynamic Team Assembly**: Automatically provisions the exact departments your idea needs (e.g., *Trust & Safety* for Dating apps, *Compliance* for HealthTech).
+- **Parallel AI Execution**: Multiple specialized agents work concurrently to generate Product Requirements (PRD), Technical Specs (TRD), Go-to-Market strategies, and financial models.
+- **Human-in-the-Loop Governance**: Built-in approval gates ensure founders maintain complete control over the execution direction before heavy compute begins.
+- **Fail-Safe Fallback Engine**: A highly realistic offline mock engine ensures the system runs perfectly and generates tailored documents even if API quotas or keys are exhausted.
+- **Command Center Dashboard**: A premium, dark-mode, bento-box UI inspired by modern agentic systems (Sedai.io), featuring real-time activity feeds and progress rings.
 
-### Key Constraints & Design Decisions
+## 🏗️ Architecture & Orchestration
 
-*   **No Databases / Local JSON Persistence**: All state, telemetry, and evidence are written deterministically to local JSON files (`runs/<run-id>/state.json`). This ensures the system remains portable and demo-safe without database overhead.
-*   **No Redux / No Global State Engines**: React state is managed cleanly at the component level to preserve isolation between the UI graph and the server-side orchestrator.
-*   **No Generalized Agent Frameworks**: We avoid opaque frameworks in favor of a strictly defined state machine. This guarantees replay safety and precise telemetry mapping.
-*   **No External Deployment Pipelines**: Execution is kept strictly local to highlight the orchestration loop and evidence gathering without cloud coupling.
+MONK AI abandons opaque, non-deterministic agent frameworks in favor of a strictly defined local state machine. This guarantees replay safety, precise telemetry mapping, and a flawless UX.
 
-## Features
+### The Pipeline Lifecycle
 
-*   **Deterministic Replay Engine**: The UI can reconstruct and replay any run from intake to completion, accurately displaying agent handoffs, latency, token costs, and state transitions via the timeline interface.
-*   **Evidence Vault**: A dedicated UI panel that transparently exposes creation artifacts, mutation commits, and verification status for full audibility.
-*   **Approval Interrupts**: Real-time halting of the execution graph to enforce safety and regulatory boundaries.
-*   **Real-time Agent Graph**: Visualizes the pipeline's active node, blocked constraints, and verification statuses during both active execution and replay.
+1. **Idea Intake (`IDEA_INTAKE`)**: Synthesizes the raw human intent.
+2. **Team Assembly (`TEAM_ASSEMBLY`)**: Selects the appropriate 8+ cross-functional teams.
+3. **Clarification (`CLARIFICATION`)**: Asks dynamic questions tailored to the idea (or safely skips via AI).
+4. **Document Generation (`DOCUMENT_DRAFT`)**: Creates a comprehensive unified startup profile (Executive Summary, Competitors, Budget, KPIs).
+5. **Human Review (`DOCUMENT_REVIEW`)**: Gatekeeper node waiting for explicit founder approval.
+6. **Team Dispatch & Execution (`TEAM_DISPATCH` ➔ `PARALLEL_EXECUTION`)**: Fan-out execution where all assembled teams draft their specific deliverables.
+7. **Cross-Functional Sync (`CROSS_FUNCTIONAL`)**: (Placeholder for agent debate).
+8. **Output Collection (`OUTPUT_COLLECTION` ➔ `COMPLETE`)**: Compiles 9+ deliverables into a downloadable payload.
 
-## Tech Stack
+## 🛠️ Tech Stack
 
-*   **Next.js 16 (App Router)**
-*   **React 19**
-*   **Tailwind CSS 4**
-*   **Lucide React** (Iconography)
-*   **TypeScript**
+- **Framework**: [Next.js 15 (App Router)](https://nextjs.org/)
+- **UI & Styling**: React 19, Tailwind CSS 4, Framer Motion
+- **Language**: TypeScript
+- **State & Storage**: File-based local JSON persistence (`/runs` directory) — absolutely zero database overhead for the MVP.
+- **AI Integration**: OpenAI GPT-4o integration wrapped in robust try/catch resilient architectures.
 
-## Getting Started
+## 🚀 Getting Started
 
-1.  **Install dependencies**:
-    ```bash
-    npm install
-    ```
-2.  **Run the development server**:
-    ```bash
-    npm run dev
-    ```
-3.  **Explore the MVP**:
-    Navigate to `http://localhost:3000`. Use the "Demo Rehearsal" prompts in the left panel to test standard flows, such as pausing at the human approval gate or triggering a compliance block with medical-related input.
+### Prerequisites
+- Node.js 18+ 
+- npm or pnpm
+- OpenAI API Key (Optional — the app falls back to a highly realistic intelligent mock engine if omitted or if quotas are hit).
 
-## Repository Structure
+### Installation
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/callmerishi1508/Monk-AI.git
+   cd Monk-AI
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Set up your environment**:
+   Create a `.env` file in the root directory:
+   ```env
+   OPENAI_API_KEY=your_api_key_here
+   ```
+
+4. **Run the development server**:
+   ```bash
+   npm run dev
+   ```
+
+5. **Start Building**:
+   Navigate to `http://localhost:3000` and submit an idea like *"I want to build a robotics company"* to watch the orchestration engine spring into action.
+
+## 📂 Repository Structure
 
 ```
 ├── app/                  # Next.js App Router (UI, API routes)
-│   ├── api/runs/         # API endpoints for orchestration, approval, and fetching states
-│   └── page.tsx          # Main Dashboard UI (Agent Graph, Stream, Evidence Vault)
+│   ├── api/sessions/     # Backend endpoints for state polling and transitions
+│   └── page.tsx          # Main Command Center UI (Pipeline, Dashboard, Feed)
 ├── lib/monk/             # Core Orchestrator Logic
-│   ├── agents.ts         # Specialized agent implementations
-│   ├── orchestrator.ts   # Deterministic state machine
-│   ├── storage.ts        # Local JSON persistence interface
-│   └── types.ts          # Shared types and state enums
-├── runs/                 # Local persistence directory (auto-generated)
-└── tailwind.config.*     # Tailwind configuration
+│   ├── agents.ts         # Specialized AI agent implementations & API fallbacks
+│   ├── mock-engine.ts    # Advanced offline deterministic fallback generator
+│   ├── orchestrator.ts   # State machine loop and transitions
+│   └── types.ts          # Shared schemas and state enums
+├── runs/                 # Local JSON persistence directory
+└── public/               # Static assets
 ```
 
-## Future Considerations
+## 🤝 Contributing
 
-As an MVP, MONK AI sets the architectural foundation for safe, governed AI interactions. Future iterations may safely plug this predictable orchestrator into broader enterprise data stores or deployment CI/CD pipelines, provided the determinism and human-approval gates are maintained.
+We believe the future of software development involves tight collaboration between humans and autonomous agents. If you want to contribute:
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## 📜 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
+
+---
+<div align="center">
+  <i>Engineered for the next generation of founders.</i>
+</div>

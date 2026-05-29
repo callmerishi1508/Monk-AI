@@ -1,65 +1,55 @@
-import { mkdir, readdir, readFile, writeFile } from "fs/promises";
+import fs from "fs";
 import path from "path";
-import { MonkRun, RunState } from "./types";
+import type { MonkSession, SessionStage } from "./types";
 
-const runsRoot = path.join(process.cwd(), "runs");
+const RUNS_DIR = path.join(process.cwd(), "runs");
 
-const VALID_STATES: RunState[] = [
-  "INTAKE", "PLANNING", "COMPLIANCE_REVIEW", "BLOCKED",
-  "WAITING_APPROVAL", "ENGINEERING", "VERIFYING", "COMPLETED", "FAILED"
+const VALID_STAGES: SessionStage[] = [
+  "IDEA_INTAKE", "TEAM_ASSEMBLY", "CLARIFICATION", "DOCUMENT_DRAFT",
+  "DOCUMENT_REVIEW", "TEAM_DISPATCH", "PARALLEL_EXECUTION",
+  "CROSS_FUNCTIONAL", "OUTPUT_COLLECTION", "COMPLETE", "FAILED",
 ];
 
-export function getRunDir(runId: string) {
-  return path.join(runsRoot, runId);
+function ensureRunsDir() {
+  if (!fs.existsSync(RUNS_DIR)) fs.mkdirSync(RUNS_DIR, { recursive: true });
 }
 
-export function getRunAppDir(runId: string) {
-  return path.join(getRunDir(runId), "app");
+function sessionPath(sessionId: string): string {
+  return path.join(RUNS_DIR, `${sessionId}.json`);
 }
 
-export async function saveRun(run: MonkRun) {
-  const runDir = getRunDir(run.runId);
-  await mkdir(runDir, { recursive: true });
-  await writeFile(path.join(runDir, "state.json"), JSON.stringify(run, null, 2), "utf8");
-}
-
-export async function loadRun(runId: string): Promise<MonkRun> {
-  const raw = await readFile(path.join(getRunDir(runId), "state.json"), "utf8");
-  const run = JSON.parse(raw) as MonkRun;
-
-  // Validate state
-  if (!VALID_STATES.includes(run.state)) {
-    run.state = "FAILED";
-    run.failureReason = "FAILED_TRANSITION";
-    run.runStatusMessage = "Invalid state detected during load. Run marked as FAILED.";
+export function saveSession(session: MonkSession): void {
+  ensureRunsDir();
+  if (!VALID_STAGES.includes(session.stage)) {
+    throw new Error(`Invalid stage: ${session.stage}`);
   }
-
-  // Ensure required fields exist
-  if (!run.telemetry) run.telemetry = [];
-  if (!run.transitions) run.transitions = [];
-  if (!run.artifacts) run.artifacts = [];
-  if (!run.proposedMutations) run.proposedMutations = [];
-  if (!run.approval) run.approval = { required: true, approved: false };
-
-  return run;
+  fs.writeFileSync(sessionPath(session.sessionId), JSON.stringify(session, null, 2), "utf-8");
 }
 
-export async function listRuns(): Promise<MonkRun[]> {
-  await mkdir(runsRoot, { recursive: true });
-  const entries = await readdir(runsRoot, { withFileTypes: true });
-  const runs = await Promise.all(
-    entries
-      .filter((entry) => entry.isDirectory())
-      .map(async (entry) => {
-        try {
-          return await loadRun(entry.name);
-        } catch {
-          return null;
-        }
-      })
-  );
+export function loadSession(sessionId: string): MonkSession | null {
+  const p = sessionPath(sessionId);
+  if (!fs.existsSync(p)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(p, "utf-8")) as MonkSession;
+  } catch {
+    return null;
+  }
+}
 
-  return runs
-    .filter((run): run is MonkRun => Boolean(run))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+export function listSessions(): MonkSession[] {
+  ensureRunsDir();
+  return fs
+    .readdirSync(RUNS_DIR)
+    .filter(f => f.endsWith(".json"))
+    .map(f => {
+      try { return JSON.parse(fs.readFileSync(path.join(RUNS_DIR, f), "utf-8")) as MonkSession; }
+      catch { return null; }
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(b!.createdAt).getTime() - new Date(a!.createdAt).getTime()) as MonkSession[];
+}
+
+export function deleteSession(sessionId: string): void {
+  const p = sessionPath(sessionId);
+  if (fs.existsSync(p)) fs.unlinkSync(p);
 }

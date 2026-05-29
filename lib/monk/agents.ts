@@ -1,327 +1,385 @@
-import { ComplianceResult, ProductIntent, ProposedMutation } from "./types";
+/* ══════════════════════════════════════════════════════════
+   MONK AI — Team Agents v2.2
+   Per-team AI execution agents — smart mock fallback
+   when OpenAI API is unavailable or quota exceeded.
+   ══════════════════════════════════════════════════════════ */
 
-const regulatedTerms = [
-  "diagnosis",
-  "medical",
-  "patient",
-  "prescription",
-  "loan approval",
-  "credit score",
-  "insurance underwriting",
-  "legal advice",
-  "crypto custody",
-  "minor",
-  "children",
-];
+import OpenAI from "openai";
+import type {
+  StartupDocument, TeamId, TeamOutput,
+  ClarificationQuestion, IdeaType,
+} from "./types";
+import {
+  mockClassifyIdea, mockAssembleTeam, mockClarifyingQuestions,
+  mockStartupDocument, mockTeamOutput, mockWebsiteCode,
+} from "./mock-engine";
 
-export function planProductIntent(idea: string): ProductIntent {
-  const lower = idea.toLowerCase();
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "mock" });
 
-  if (lower.includes("invoice") || lower.includes("billing") || lower.includes("payment")) {
-    return {
-      vertical: "invoice",
-      targetUser: "Freelancers and small service businesses",
-      workflow: "Create invoices, track payment status, and review outstanding revenue.",
-      entities: ["Invoice", "Client", "Payment"],
-      routes: ["/", "/invoices", "/api/invoices"],
-      businessRequirements: [
-        "Invoice records must include client, amount, due date, and payment status.",
-        "Dashboard must highlight paid, pending, and overdue invoices.",
-        "API route must expose invoice data for the micro-SaaS foundation.",
-      ],
-    };
-  }
+/* ── API availability tracking ──────────────────────────── */
+// null = unknown (will try), false = quota hit (use mock), true = working
+let _apiAvailable: boolean | null = null;
 
-  if (lower.includes("task") || lower.includes("kanban") || lower.includes("project")) {
-    return {
-      vertical: "task",
-      targetUser: "Startup operators and product teams",
-      workflow: "Create tasks, move work across a kanban board, and track ownership.",
-      entities: ["Task", "Board", "Assignee"],
-      routes: ["/", "/tasks", "/api/tasks"],
-      businessRequirements: [
-        "Task records must include title, owner, status, priority, and due date.",
-        "Dashboard must show kanban lanes for Todo, In Progress, and Done.",
-        "API route must expose task data for the micro-SaaS foundation.",
-      ],
-    };
-  }
+function isApiOn(): boolean {
+  if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.trim() === "") return false;
+  if (_apiAvailable === false) return false;
+  return true;
+}
 
-  return {
-    vertical: "generic",
-    targetUser: "Early-stage startup teams",
-    workflow: "Capture customer records, track operating status, and review core metrics.",
-    entities: ["Customer", "Workspace", "Activity"],
-    routes: ["/", "/workspace", "/api/workspace"],
-    businessRequirements: [
-      "Workspace records must include customer, owner, status, and next action.",
-      "Dashboard must reflect the submitted startup idea in the product copy.",
-      "API route must expose workspace data for the micro-SaaS foundation.",
+/* ── GPT helper ──────────────────────────────────────────── */
+
+async function gpt<T>(
+  systemPrompt: string,
+  userPrompt: string,
+  maxTokens = 2000
+): Promise<T> {
+  const res = await openai.chat.completions.create({
+    model: "gpt-4o",
+    temperature: 0.7,
+    max_tokens: maxTokens,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
     ],
-  };
+  });
+  _apiAvailable = true;
+  return JSON.parse(res.choices[0].message.content || "{}") as T;
 }
 
-export function reviewCompliance(idea: string): ComplianceResult {
-  const lower = idea.toLowerCase();
-  const reviewedTerms = regulatedTerms.filter((term) => lower.includes(term));
-
-  if (reviewedTerms.length > 0) {
-    return {
-      severity: "CRITICAL",
-      approved: false,
-      reviewedTerms,
-      reason: `Compliance blocked execution due to regulated workflow terms: ${reviewedTerms.join(", ")}.`,
-    };
-  }
-
-  if (lower.includes("finance") || lower.includes("health") || lower.includes("contract")) {
-    return {
-      severity: "HIGH",
-      approved: true,
-      reviewedTerms,
-      reason: "Approved for MVP scaffolding with caution: avoid regulated decisions and keep outputs operational.",
-    };
-  }
-
-  return {
-    severity: "LOW",
-    approved: true,
-    reviewedTerms,
-    reason: "Approved. No blocking regulated workflow detected for this MVP scaffold.",
-  };
+function isQuotaError(e: unknown): boolean {
+  const err = e as { status?: number; code?: string; message?: string };
+  return err?.status === 429 || err?.code === "insufficient_quota" || Boolean(String(err?.message).match(/quota|billing|rate.limit/i));
 }
 
-export function proposeEngineeringMutations(intent: ProductIntent, idea: string): ProposedMutation[] {
-  const timestamp = new Date().toISOString();
-  const commonPackage = JSON.stringify(
-    {
-      name: `${intent.vertical}-micro-saas-foundation`,
-      version: "0.1.0",
-      private: true,
-      scripts: {
-        dev: "next dev",
-        build: "next build",
-        start: "next start",
-      },
-      dependencies: {
-        next: "16.2.6",
-        react: "19.2.4",
-        "react-dom": "19.2.4",
-      },
-      devDependencies: {
-        typescript: "^5.0.0",
-      },
-    },
-    null,
-    2
-  );
+/* ── Stage 1: Idea Classification ──────────────────────── */
 
-  if (intent.vertical === "invoice") {
-    return [
-      mutation("package.json", commonPackage, timestamp, "Created runnable Next.js package for invoice SaaS foundation.", "Added invoice SaaS package manifest"),
-      mutation("lib/schema.ts", invoiceSchema(), timestamp, "Defined invoice, client, and payment status fields from product intent.", "Added invoice schema with payment status field"),
-      mutation("app/page.tsx", invoiceDashboard(idea), timestamp, "Generated invoice dashboard copy and metrics specific to billing workflows.", "Created invoice dashboard route"),
-      mutation("app/invoices/page.tsx", invoiceList(), timestamp, "Added invoice route for reviewing paid, pending, and overdue records.", "Created invoices route"),
-      mutation("app/api/invoices/route.ts", invoiceApi(), timestamp, "Added invoice API handler returning business-specific sample invoice data.", "Created invoice API route"),
-    ];
+export async function classifyIdea(idea: string): Promise<{
+  ideaType: IdeaType;
+  sector: string;
+  summary: string;
+  hasProblemStatement: boolean;
+  problemStatement?: string;
+  suggestedLabel: string;
+}> {
+  if (!isApiOn()) return mockClassifyIdea(idea);
+  try {
+    return await gpt(
+      `You are MONK AI's idea classification engine. Analyze startup ideas regardless of sector.
+Classify as PROBLEM_STATEMENT (user describes a problem to solve) or DIRECT_BUILD (user describes product to build).
+Sectors: FinTech, HealthTech, EdTech, AgriTech, DeepTech, Cybersecurity, E-Commerce, SaaS, Web3, Social, Gaming, PropTech, LegalTech, ClimaTech, BioTech, FoodTech, Logistics, Media, B2B, B2C, Consumer, Enterprise.
+Respond with valid JSON only.`,
+      `Classify: "${idea}"
+JSON:
+{
+  "ideaType": "PROBLEM_STATEMENT" | "DIRECT_BUILD",
+  "sector": "e.g. FinTech",
+  "summary": "one sentence summary",
+  "hasProblemStatement": true/false,
+  "problemStatement": "problem text or null",
+  "suggestedLabel": "e.g. 'TradingAI · May 29'"
+}`
+    );
+  } catch (e) {
+    if (isQuotaError(e)) _apiAvailable = false;
+    return mockClassifyIdea(idea);
   }
-
-  if (intent.vertical === "task") {
-    return [
-      mutation("package.json", commonPackage, timestamp, "Created runnable Next.js package for task manager SaaS foundation.", "Added task SaaS package manifest"),
-      mutation("lib/schema.ts", taskSchema(), timestamp, "Defined task, board, assignee, status, and priority fields from product intent.", "Added task schema with kanban status fields"),
-      mutation("app/page.tsx", taskDashboard(idea), timestamp, "Generated task dashboard copy and kanban metrics specific to project workflows.", "Created task dashboard route"),
-      mutation("app/tasks/page.tsx", taskBoard(), timestamp, "Added task route with Todo, In Progress, and Done kanban lanes.", "Created kanban tasks route"),
-      mutation("app/api/tasks/route.ts", taskApi(), timestamp, "Added task API handler returning business-specific sample task data.", "Created task API route"),
-    ];
-  }
-
-  return [
-    mutation("package.json", commonPackage, timestamp, "Created runnable Next.js package for a generic micro-SaaS foundation.", "Added generic SaaS package manifest"),
-    mutation("lib/schema.ts", genericSchema(), timestamp, "Defined workspace, customer, activity, status, and next action fields.", "Added workspace schema"),
-    mutation("app/page.tsx", genericDashboard(idea), timestamp, "Generated dashboard copy tied to the submitted startup idea.", "Created workspace dashboard route"),
-    mutation("app/workspace/page.tsx", genericWorkspace(), timestamp, "Added workspace route for customer operating records.", "Created workspace route"),
-    mutation("app/api/workspace/route.ts", genericApi(), timestamp, "Added workspace API handler returning operating records.", "Created workspace API route"),
-  ];
 }
 
-function mutation(path: string, content: string, timestamp: string, reasoningSummary: string, diffSummary: string): ProposedMutation {
-  return {
-    path,
-    content,
-    timestamp,
-    reasoningSummary,
-    diffSummary,
-    sourceAgent: "ENGINEERING_EXECUTOR",
-  };
+/* ── Stage 2: Team Assembly ─────────────────────────────── */
+
+export async function assembleTeam(idea: string, ideaType: IdeaType, sector: string): Promise<{
+  teams: { teamId: TeamId; label: string; description: string; priority: "CORE" | "EXTENDED" | "OPTIONAL"; reason: string }[];
+  summary: string;
+}> {
+  if (!isApiOn()) {
+    const r = mockAssembleTeam(sector);
+    return { teams: r.teams as any, summary: r.summary };
+  }
+  const allTeams: TeamId[] = ["PRODUCT", "ENGINEERING", "DESIGN", "RESEARCH", "MARKETING", "LEGAL", "FINANCE", "SALES", "COMPLIANCE", "QA", "OPERATIONS", "SECURITY"];
+  try {
+    return await gpt(
+      `You are MONK AI's team assembly engine. Select optimal departments for a startup.
+Available: ${allTeams.join(", ")}. Always include PRODUCT and ENGINEERING.
+Priority: CORE (always), EXTENDED (after core), OPTIONAL (if time allows).
+Respond with valid JSON only.`,
+      `Idea: "${idea}" | Type: ${ideaType} | Sector: ${sector}
+JSON:
+{
+  "teams": [{ "teamId": "...", "label": "...", "description": "...", "priority": "CORE"|"EXTENDED"|"OPTIONAL", "reason": "..." }],
+  "summary": "..."
+}`,
+      1500
+    );
+  } catch (e) {
+    if (isQuotaError(e)) _apiAvailable = false;
+    const r = mockAssembleTeam(sector);
+    return { teams: r.teams as any, summary: r.summary };
+  }
 }
 
-function invoiceSchema() {
-  return `export type PaymentStatus = "paid" | "pending" | "overdue";
+/* ── Stage 3: Clarifying Questions ─────────────────────── */
 
-export type Invoice = {
-  id: string;
-  clientName: string;
-  amountCents: number;
-  dueDate: string;
-  paymentStatus: PaymentStatus;
+export async function generateClarifyingQuestions(
+  idea: string, ideaType: IdeaType, sector: string
+): Promise<{ questions: ClarificationQuestion[] }> {
+  if (!isApiOn()) return { questions: mockClarifyingQuestions(idea, ideaType) };
+  try {
+    return await gpt(
+      `You are MONK AI's discovery engine. Generate 5-7 targeted, conversational clarifying questions about the startup.
+Surface: target users, differentiators, business model, geography, timeline, funding status.
+DIRECT_BUILD → focus on uniqueness and features. PROBLEM_STATEMENT → focus on problem depth.
+All questions skippable. Respond with valid JSON only.`,
+      `Idea: "${idea}" | Type: ${ideaType} | Sector: ${sector}
+JSON:
+{
+  "questions": [{ "id": "q1", "question": "...", "context": "...", "examples": ["...", "..."], "skippable": true }]
+}`
+    );
+  } catch (e) {
+    if (isQuotaError(e)) _apiAvailable = false;
+    return { questions: mockClarifyingQuestions(idea, ideaType) };
+  }
+}
+
+/* ── Stage 4: Startup Document Builder ──────────────────── */
+
+export async function buildStartupDocument(
+  idea: string,
+  ideaType: IdeaType,
+  sector: string,
+  answers: Array<{ question: string; answer: string | null; skipped: boolean }>,
+  teams: TeamId[],
+  modifications?: string
+): Promise<{ document: StartupDocument }> {
+  if (!isApiOn()) return { document: mockStartupDocument(idea, ideaType, sector) };
+  const answersText = answers.map(a => `Q: ${a.question}\nA: ${a.skipped ? "[Skipped—AI decides]" : a.answer}`).join("\n\n");
+  try {
+    return await gpt(
+      `You are MONK AI's startup document architect. Write comprehensive, investor-ready startup documents.
+${modifications ? `User modifications requested: ${modifications}` : ""}
+Be specific. Include real market data. Be optimistic but realistic. Respond with valid JSON only.`,
+      `Build startup document:
+Idea: "${idea}" | Type: ${ideaType} | Sector: ${sector} | Teams: ${teams.join(", ")}
+
+Answers:
+${answersText}
+
+JSON schema:
+{
+  "document": {
+    "ideaType": "${ideaType}",
+    "executiveSummary": "3-4 sentences",
+    "problemStatement": "2-3 sentences or null",
+    "solution": "2-3 sentences",
+    "vision": "long-term vision",
+    "mission": "mission statement",
+    "uniqueValueProposition": "what makes this unique",
+    "targetMarket": "TAM description with size estimate",
+    "goals": [{ "title": "...", "description": "...", "metric": "KPI", "timeline": "e.g. 6 months" }],
+    "features": [{ "name": "...", "description": "...", "priority": "MUST_HAVE"|"SHOULD_HAVE"|"NICE_TO_HAVE", "effort": "LOW"|"MEDIUM"|"HIGH", "userStory": "As a [user]..." }],
+    "competitorAnalysis": [{ "name": "...", "strengths": ["..."], "weaknesses": ["..."], "differentiator": "..." }],
+    "techStack": [{ "layer": "...", "technology": "...", "reason": "..." }],
+    "roadmap": [{ "name": "...", "duration": "...", "deliverables": ["..."], "teams": ["..."] }],
+    "budget": [{ "category": "...", "amount": "...", "notes": "..." }],
+    "totalBudgetEstimate": "e.g. $50K for MVP",
+    "goToMarket": "3-4 sentences",
+    "marketSurvivalGuide": "5-6 sentences",
+    "riskAssessment": [{ "title": "...", "impact": "HIGH"|"MEDIUM"|"LOW", "likelihood": "HIGH"|"MEDIUM"|"LOW", "mitigation": "..." }],
+    "kpis": [{ "name": "...", "target": "...", "measurement": "..." }],
+    "userPersonas": [{ "name": "...", "age": "25-35", "role": "...", "painPoints": ["..."], "goals": ["..."], "techSavviness": "HIGH"|"MEDIUM"|"LOW" }],
+    "sector": "${sector}",
+    "generatedAt": "${new Date().toISOString()}"
+  }
+}`,
+      4000
+    );
+  } catch (e) {
+    if (isQuotaError(e)) _apiAvailable = false;
+    return { document: mockStartupDocument(idea, ideaType, sector) };
+  }
+}
+
+/* ── Team Worker Definitions ────────────────────────────── */
+
+export const TEAM_DEFINITIONS: Record<TeamId, { label: string; description: string; icon: string }> = {
+  PRODUCT:     { label: "Product Management", description: "PRD, user stories, feature specs, roadmap ownership",         icon: "📋" },
+  ENGINEERING: { label: "Engineering",         description: "Technical architecture, website code, APIs, infrastructure",  icon: "⚙️" },
+  DESIGN:      { label: "Design & UX",         description: "Design system, wireframes, UI specs, brand identity",        icon: "🎨" },
+  RESEARCH:    { label: "R&D",                 description: "Technology assessment, innovation scan, feasibility study",   icon: "🔬" },
+  MARKETING:   { label: "Marketing",           description: "Go-to-market strategy, brand voice, content strategy",       icon: "📣" },
+  LEGAL:       { label: "Legal & Policy",      description: "Regulatory compliance, legal structure, privacy policy",     icon: "⚖️" },
+  FINANCE:     { label: "Finance",             description: "Financial projections, revenue model, cost structure",       icon: "💰" },
+  SALES:       { label: "Sales & Growth",      description: "Sales strategy, ICP definition, growth playbook",            icon: "📈" },
+  COMPLIANCE:  { label: "Compliance",          description: "Industry regulations, certifications, risk management",      icon: "🛡️" },
+  QA:          { label: "QA & Verification",  description: "Quality assurance, testing strategy, acceptance criteria",   icon: "✅" },
+  OPERATIONS:  { label: "Operations",          description: "Process design, team structure, operational playbook",       icon: "🔄" },
+  SECURITY:    { label: "Security",            description: "Security architecture, threat modeling, data protection",    icon: "🔐" },
 };
 
-export const invoiceFields = ["clientName", "amountCents", "dueDate", "paymentStatus"];
-`;
+/* ── Per-Team Output Generators ──────────────────────────── */
+
+export async function runProductTeam(doc: StartupDocument): Promise<string> {
+  if (!isApiOn()) return mockTeamOutput("PRODUCT", doc);
+  try {
+    const r = await gpt<{ prd: string }>(
+      `You are the Head of Product. Write an enterprise-grade PRD in clean markdown.
+Respond with JSON: { "prd": "full markdown" }`,
+      `PRD for:
+Summary: ${doc.executiveSummary}
+Vision: ${doc.vision}
+Features: ${JSON.stringify(doc.features)}
+Personas: ${JSON.stringify(doc.userPersonas)}`,
+      3000
+    );
+    return r.prd;
+  } catch (e) {
+    if (isQuotaError(e)) _apiAvailable = false;
+    return mockTeamOutput("PRODUCT", doc);
+  }
 }
 
-function taskSchema() {
-  return `export type TaskStatus = "todo" | "in-progress" | "done";
-export type TaskPriority = "low" | "medium" | "high";
-
-export type Task = {
-  id: string;
-  title: string;
-  owner: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  dueDate: string;
-};
-
-export const kanbanStatuses: TaskStatus[] = ["todo", "in-progress", "done"];
-`;
+export async function runEngineeringTeam(doc: StartupDocument): Promise<{ trd: string; websiteCode: string }> {
+  if (!isApiOn()) return { trd: mockTeamOutput("ENGINEERING", doc), websiteCode: mockWebsiteCode(doc) };
+  try {
+    const [trdR, webR] = await Promise.all([
+      gpt<{ trd: string }>(
+        `You are the CTO. Write a TRD in clean markdown with system architecture, API design, DB schema.
+Respond with JSON: { "trd": "full markdown" }`,
+        `TRD for: ${doc.executiveSummary}\nStack: ${JSON.stringify(doc.techStack)}`,
+        2000
+      ),
+      gpt<{ code: string }>(
+        `You are a senior full-stack engineer. Write a complete working Next.js 14 TypeScript landing page.
+Sections: Hero, Features, Pricing, CTA, Footer. Use real content from the startup.
+Respond with JSON: { "code": "complete Next.js page code" }`,
+        `Startup: ${doc.suggestedLabel || "Startup"}\nSummary: ${doc.executiveSummary}\nUVP: ${doc.uniqueValueProposition}\nFeatures: ${doc.features.map(f => `${f.name}: ${f.description}`).join("\n")}`,
+        3000
+      ),
+    ]);
+    return { trd: trdR.trd, websiteCode: webR.code };
+  } catch (e) {
+    if (isQuotaError(e)) _apiAvailable = false;
+    return { trd: mockTeamOutput("ENGINEERING", doc), websiteCode: mockWebsiteCode(doc) };
+  }
 }
 
-function genericSchema() {
-  return `export type WorkspaceRecord = {
-  id: string;
-  customer: string;
-  owner: string;
-  status: "active" | "at-risk" | "complete";
-  nextAction: string;
-};
-
-export const workspaceFields = ["customer", "owner", "status", "nextAction"];
-`;
+export async function runDesignTeam(doc: StartupDocument): Promise<string> {
+  if (!isApiOn()) return mockTeamOutput("DESIGN", doc);
+  try {
+    const r = await gpt<{ designSystem: string }>(
+      `You are the Creative Director. Write a comprehensive design system in clean markdown (colors, typography, components, brand).
+Respond with JSON: { "designSystem": "full markdown" }`,
+      `Design for: ${doc.executiveSummary}\nSector: ${doc.sector}`,
+      2000
+    );
+    return r.designSystem;
+  } catch (e) {
+    if (isQuotaError(e)) _apiAvailable = false;
+    return mockTeamOutput("DESIGN", doc);
+  }
 }
 
-function invoiceDashboard(idea: string) {
-  return `const metrics = [
-  { label: "Pending invoices", value: "$18,400" },
-  { label: "Paid this month", value: "$42,900" },
-  { label: "Overdue", value: "$3,200" },
-];
-
-export default function InvoiceDashboard() {
-  return (
-    <main>
-      <h1>Invoice SaaS Command Center</h1>
-      <p>${escapeForTsx(idea)}</p>
-      <section>{metrics.map((metric) => <article key={metric.label}><strong>{metric.value}</strong><span>{metric.label}</span></article>)}</section>
-    </main>
-  );
-}
-`;
+export async function runResearchTeam(doc: StartupDocument): Promise<string> {
+  if (!isApiOn()) return mockTeamOutput("RESEARCH", doc);
+  try {
+    const r = await gpt<{ report: string }>(
+      `You are the Chief Research Officer. Write an R&D and technology assessment report in clean markdown.
+Respond with JSON: { "report": "full markdown" }`,
+      `Sector: ${doc.sector}\nSolution: ${doc.solution}\nStack: ${JSON.stringify(doc.techStack)}`,
+      2000
+    );
+    return r.report;
+  } catch (e) {
+    if (isQuotaError(e)) _apiAvailable = false;
+    return mockTeamOutput("RESEARCH", doc);
+  }
 }
 
-function invoiceList() {
-  return `const invoices = [
-  { id: "INV-1001", clientName: "Northstar Studio", amount: "$4,800", paymentStatus: "pending" },
-  { id: "INV-1002", clientName: "BrightOps", amount: "$9,600", paymentStatus: "paid" },
-  { id: "INV-1003", clientName: "Atlas Labs", amount: "$3,200", paymentStatus: "overdue" },
-];
-
-export default function InvoicesPage() {
-  return <main><h1>Invoices</h1>{invoices.map((invoice) => <div key={invoice.id}>{invoice.id} {invoice.clientName} {invoice.amount} {invoice.paymentStatus}</div>)}</main>;
-}
-`;
-}
-
-function invoiceApi() {
-  return `import { NextResponse } from "next/server";
-
-export function GET() {
-  return NextResponse.json({
-    invoices: [
-      { id: "INV-1001", clientName: "Northstar Studio", amountCents: 480000, paymentStatus: "pending", dueDate: "2026-06-15" },
-      { id: "INV-1002", clientName: "BrightOps", amountCents: 960000, paymentStatus: "paid", dueDate: "2026-06-01" }
-    ]
-  });
-}
-`;
+export async function runMarketingTeam(doc: StartupDocument): Promise<string> {
+  if (!isApiOn()) return mockTeamOutput("MARKETING", doc);
+  try {
+    const r = await gpt<{ strategy: string }>(
+      `You are the CMO. Write a complete go-to-market and marketing strategy in clean markdown.
+Respond with JSON: { "strategy": "full markdown" }`,
+      `Summary: ${doc.executiveSummary}\nUVP: ${doc.uniqueValueProposition}\nTarget: ${doc.targetMarket}`,
+      2000
+    );
+    return r.strategy;
+  } catch (e) {
+    if (isQuotaError(e)) _apiAvailable = false;
+    return mockTeamOutput("MARKETING", doc);
+  }
 }
 
-function taskDashboard(idea: string) {
-  return `const lanes = ["Todo", "In Progress", "Done"];
-
-export default function TaskDashboard() {
-  return (
-    <main>
-      <h1>Task Manager Operating Board</h1>
-      <p>${escapeForTsx(idea)}</p>
-      <section>{lanes.map((lane) => <article key={lane}><h2>{lane}</h2><p>Kanban lane for startup execution.</p></article>)}</section>
-    </main>
-  );
-}
-`;
-}
-
-function taskBoard() {
-  return `const tasks = [
-  { id: "TASK-1", title: "Launch onboarding", owner: "PM", status: "todo", priority: "high" },
-  { id: "TASK-2", title: "Review activation metrics", owner: "Ops", status: "in-progress", priority: "medium" },
-  { id: "TASK-3", title: "Publish first workflow", owner: "Eng", status: "done", priority: "low" },
-];
-
-export default function TasksPage() {
-  return <main><h1>Kanban Tasks</h1>{tasks.map((task) => <div key={task.id}>{task.title} {task.owner} {task.status} {task.priority}</div>)}</main>;
-}
-`;
+export async function runFinanceTeam(doc: StartupDocument): Promise<string> {
+  if (!isApiOn()) return mockTeamOutput("FINANCE", doc);
+  try {
+    const r = await gpt<{ projections: string }>(
+      `You are the CFO. Write 12-month financial projections and business model in clean markdown with tables.
+Respond with JSON: { "projections": "full markdown" }`,
+      `Summary: ${doc.executiveSummary}\nBudget: ${JSON.stringify(doc.budget)}\nTotal: ${doc.totalBudgetEstimate}`,
+      2000
+    );
+    return r.projections;
+  } catch (e) {
+    if (isQuotaError(e)) _apiAvailable = false;
+    return mockTeamOutput("FINANCE", doc);
+  }
 }
 
-function taskApi() {
-  return `import { NextResponse } from "next/server";
-
-export function GET() {
-  return NextResponse.json({
-    tasks: [
-      { id: "TASK-1", title: "Launch onboarding", owner: "PM", status: "todo", priority: "high", dueDate: "2026-06-05" },
-      { id: "TASK-2", title: "Review activation metrics", owner: "Ops", status: "in-progress", priority: "medium", dueDate: "2026-06-08" }
-    ]
-  });
-}
-`;
-}
-
-function genericDashboard(idea: string) {
-  return `export default function WorkspaceDashboard() {
-  return (
-    <main>
-      <h1>Micro-SaaS Workspace</h1>
-      <p>${escapeForTsx(idea)}</p>
-      <section><article><strong>12</strong><span>Active customers</span></article><article><strong>4</strong><span>Next actions due</span></article></section>
-    </main>
-  );
-}
-`;
+export async function runLegalTeam(doc: StartupDocument): Promise<string> {
+  if (!isApiOn()) return mockTeamOutput("LEGAL", doc);
+  try {
+    const r = await gpt<{ legal: string }>(
+      `You are General Counsel. Write a legal compliance checklist in clean markdown.
+Respond with JSON: { "legal": "full markdown" }`,
+      `Summary: ${doc.executiveSummary}\nSector: ${doc.sector}\nRisks: ${JSON.stringify(doc.riskAssessment)}`,
+      1500
+    );
+    return r.legal;
+  } catch (e) {
+    if (isQuotaError(e)) _apiAvailable = false;
+    return mockTeamOutput("LEGAL", doc);
+  }
 }
 
-function genericWorkspace() {
-  return `export default function WorkspacePage() {
-  return <main><h1>Workspace Records</h1><p>Track customer status, owner, and next action.</p></main>;
-}
-`;
-}
-
-function genericApi() {
-  return `import { NextResponse } from "next/server";
-
-export function GET() {
-  return NextResponse.json({
-    records: [
-      { id: "REC-1", customer: "Acme", owner: "Founder", status: "active", nextAction: "Schedule onboarding" }
-    ]
-  });
-}
-`;
+export async function runSalesTeam(doc: StartupDocument): Promise<string> {
+  if (!isApiOn()) return mockTeamOutput("SALES", doc);
+  try {
+    const r = await gpt<{ sales: string }>(
+      `You are VP of Sales. Write a sales strategy and growth playbook in clean markdown.
+Respond with JSON: { "sales": "full markdown" }`,
+      `Summary: ${doc.executiveSummary}\nUVP: ${doc.uniqueValueProposition}\nPersonas: ${JSON.stringify(doc.userPersonas)}`,
+      1500
+    );
+    return r.sales;
+  } catch (e) {
+    if (isQuotaError(e)) _apiAvailable = false;
+    return mockTeamOutput("SALES", doc);
+  }
 }
 
-function escapeForTsx(value: string) {
-  return value.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$/g, "\\$").replace(/</g, "&lt;");
+export async function runGenericTeam(teamId: TeamId, doc: StartupDocument): Promise<string> {
+  if (!isApiOn()) return mockTeamOutput(teamId, doc);
+  const def = TEAM_DEFINITIONS[teamId];
+  try {
+    const r = await gpt<{ output: string }>(
+      `You are head of ${def.label}. Role: ${def.description}. Write a comprehensive deliverable in clean markdown.
+Respond with JSON: { "output": "full markdown" }`,
+      `Context: ${doc.executiveSummary}\nSector: ${doc.sector}\nSolution: ${doc.solution}`,
+      1500
+    );
+    return r.output;
+  } catch (e) {
+    if (isQuotaError(e)) _apiAvailable = false;
+    return mockTeamOutput(teamId, doc);
+  }
+}
+
+/* ── Session Label Generator ─────────────────────────────── */
+
+export function buildSessionLabel(sector: string, ideaType: IdeaType): string {
+  const date = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return `${sector} ${ideaType === "PROBLEM_STATEMENT" ? "Venture" : "Build"} · ${date}`;
 }

@@ -1,546 +1,523 @@
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
-import { planProductIntent, proposeEngineeringMutations, reviewCompliance } from "./agents";
-import { getRunAppDir, loadRun, saveRun } from "./storage";
+/* ══════════════════════════════════════════════════════════
+   MONK AI — Session Engine v2.0
+   10-stage autonomous startup execution pipeline
+   ══════════════════════════════════════════════════════════ */
+
+import { v4 as uuid } from "uuid";
+import { saveSession, loadSession } from "./storage";
 import {
-  AgentName,
-  ArtifactRecord,
-  FailureReason,
-  MonkRun,
-  ProductVertical,
-  RunState,
-  TelemetryEvent,
-  VerificationCheck,
-  VerificationEvidence,
+  classifyIdea, assembleTeam, generateClarifyingQuestions,
+  buildStartupDocument, runProductTeam, runEngineeringTeam,
+  runDesignTeam, runResearchTeam, runMarketingTeam, runFinanceTeam,
+  runLegalTeam, runSalesTeam, runGenericTeam, buildSessionLabel,
+  TEAM_DEFINITIONS,
+} from "./agents";
+import type {
+  MonkSession, SessionStage, TeamId, TeamWorker, TeamOutput,
+  TeamActivity, SessionEvent, ClarificationAnswer,
+  ReviewDocumentRequest, ApproveTeamsRequest,
 } from "./types";
 
-const STATE_VERSION = 1;
-const ORCHESTRATOR_VERSION = "monk-orchestrator-0.1.0";
+/* ── Helpers ──────────────────────────────────────────────── */
 
-const allowedTransitions: Record<RunState, RunState[]> = {
-  INTAKE: ["PLANNING"],
-  PLANNING: ["COMPLIANCE_REVIEW"],
-  COMPLIANCE_REVIEW: ["BLOCKED", "WAITING_APPROVAL"],
-  BLOCKED: [],
-  WAITING_APPROVAL: ["ENGINEERING", "FAILED"],
-  ENGINEERING: ["VERIFYING"],
-  VERIFYING: ["COMPLETED", "FAILED"],
-  COMPLETED: [],
-  FAILED: [],
-};
+function now() { return new Date().toISOString(); }
 
-export async function createRun(idea: string): Promise<MonkRun> {
-  const cleanIdea = idea.trim();
-  if (!cleanIdea) {
-    throw new Error("Startup idea is required.");
-  }
-
-  const now = new Date().toISOString();
-  const runId = `run-${Date.now()}`;
-  let run: MonkRun = {
-    stateVersion: STATE_VERSION,
-    orchestratorVersion: ORCHESTRATOR_VERSION,
-    runId,
-    runLabel: buildRunLabel(cleanIdea),
-    runStatusMessage: "Idea received. Product Manager is preparing scoped intent.",
-    lastCheckpoint: "INTAKE_CAPTURED",
-    idea: cleanIdea,
-    state: "INTAKE",
-    createdAt: now,
-    updatedAt: now,
-    retryCount: 0,
-    maxRetries: 1,
-    revisionCycles: 0,
-    maxRevisionCycles: 2,
-    approval: {
-      required: true,
-      approved: false,
-    },
-    proposedMutations: [],
-    artifacts: [],
-    telemetry: [],
-    transitions: [],
-  };
-
-  run = addTelemetry(run, "PRODUCT_MANAGER", "INTAKE_RECEIVED", "Captured startup idea for governed execution.");
-  run = transition(run, "PLANNING", "Product Manager started scoped product planning.");
-
-  const productIntent = planProductIntent(cleanIdea);
-  run.productIntent = productIntent;
-  run.runStatusMessage = `Product Manager scoped a ${productIntent.vertical} micro-SaaS foundation.`;
-  run.lastCheckpoint = "PRODUCT_SCOPED";
-  run = addTelemetry(run, "PRODUCT_MANAGER", "PRODUCT_INTENT_CREATED", `${productIntent.entities.join(", ")} entities selected.`);
-  run = transition(run, "COMPLIANCE_REVIEW", "Product intent ready for compliance review.");
-
-  const compliance = reviewCompliance(cleanIdea);
-  run.compliance = compliance;
-  run = addTelemetry(run, "COMPLIANCE_GATEKEEPER", "COMPLIANCE_REVIEWED", `${compliance.severity}: ${compliance.reason}`);
-
-  if (!compliance.approved) {
-    run.runStatusMessage = compliance.reason;
-    run.lastCheckpoint = "COMPLIANCE_BLOCKED";
-    run = transition(run, "BLOCKED", "Compliance severity CRITICAL blocked execution.");
-    await saveRun(touch(run));
-    return run;
-  }
-
-  run.proposedMutations = proposeEngineeringMutations(productIntent, run.idea);
-  run.runStatusMessage = `Compliance approved execution. Waiting for human approval before committing ${run.proposedMutations.length} proposed mutations.`;
-  run.lastCheckpoint = "COMPLIANCE_APPROVED";
-  run = addTelemetry(run, "ENGINEERING_EXECUTOR", "MUTATIONS_PROPOSED_FOR_APPROVAL", run.proposedMutations.map((mutation) => mutation.diffSummary).join("; "));
-  run = transition(run, "WAITING_APPROVAL", "Compliance approved. Human approval is required before engineering.");
-  await saveRun(touch(run));
-  return run;
+function addEvent(session: MonkSession, event: string, detail: string, teamId?: TeamId): SessionEvent {
+  const e: SessionEvent = { id: uuid(), timestamp: now(), stage: session.stage, event, detail, teamId };
+  session.events.push(e);
+  return e;
 }
 
-type ApprovalAction = "approve" | "reject" | "request_revision";
+function addTeamActivity(session: MonkSession, teamId: TeamId, message: string, type: TeamActivity["type"], linkedTeam?: TeamId) {
+  const team = session.proposedTeams.find(t => t.teamId === teamId) || session.approvedTeams?.find(t => t.teamId === teamId);
+  if (!team) return;
+  const activity: TeamActivity = { id: uuid(), timestamp: now(), teamId, message, type, linkedTeam };
+  team.activities.push(activity);
+}
 
-type ApprovalOptions = {
-  action?: ApprovalAction;
-  edits?: {
-    runLabel?: string;
-    apiRouteName?: string;
+function setStage(session: MonkSession, stage: SessionStage) {
+  session.stage = stage;
+  session.updatedAt = now();
+  addEvent(session, "STAGE_TRANSITION", `Entered stage: ${stage}`);
+}
+
+function buildTeamWorker(teamId: TeamId, reason: string, label: string, description: string): TeamWorker {
+  return {
+    teamId, label, description,
+    icon: TEAM_DEFINITIONS[teamId]?.icon || "🏢",
+    status: "QUEUED",
+    progress: 0,
+    currentTask: "Awaiting dispatch",
+    activities: [],
   };
-};
+}
 
-export async function approveRun(runId: string, options: ApprovalOptions = {}): Promise<MonkRun> {
-  let run = await loadRun(runId);
-  const action = options.action || "approve";
+/* ── STAGE 1: Create Session ────────────────────────────── */
 
-  if (run.state !== "WAITING_APPROVAL") {
-    // Return run unmodified to gracefully ignore concurrent/duplicate requests
-    return run;
-  }
-
-  run = applyApprovalEdits(run, options.edits);
-
-  if (action === "reject") {
-    run.approval = {
-      required: true,
-      approved: false,
-    };
-    run.runStatusMessage = "Human rejected execution before any file mutations were committed.";
-    run.lastCheckpoint = "HUMAN_REJECTED";
-    run = addTelemetry(run, "HUMAN_APPROVAL", "EXECUTION_REJECTED", "Human rejected proposed mutations before external side effects.");
-    run = transition(run, "FAILED", "Human rejected execution at approval interrupt.");
-    await saveRun(touch(run));
-    return run;
-  }
-
-  if (action === "request_revision") {
-    if (run.revisionCycles >= run.maxRevisionCycles) {
-      run = failRun(run, "FAILED_APPROVAL", "Revision request exceeded maximum revision cycles.");
-      await saveRun(touch(run));
-      return run;
-    }
-
-    run.revisionCycles += 1;
-    run.proposedMutations = run.productIntent ? proposeEngineeringMutations(run.productIntent, run.idea) : [];
-    run.runStatusMessage = `Human requested revision. Updated shared state and regenerated ${run.proposedMutations.length} proposed mutations.`;
-    run.lastCheckpoint = "HUMAN_REVISION_REQUESTED";
-    run = addTelemetry(run, "HUMAN_APPROVAL", "REVISION_REQUESTED", "Human edited shared memory and requested revised proposed mutations.");
-    await saveRun(touch(run));
-    return run;
-  }
-
-  run.approval = {
-    required: true,
-    approved: true,
-    approvedAt: new Date().toISOString(),
-    approvedBy: "Demo Operator",
+export async function createSession(idea: string): Promise<MonkSession> {
+  const sessionId = uuid();
+  const session: MonkSession = {
+    sessionVersion: 2,
+    sessionId,
+    sessionLabel: "New Session",
+    idea,
+    stage: "IDEA_INTAKE",
+    createdAt: now(),
+    updatedAt: now(),
+    proposedTeams: [],
+    clarificationQuestions: [],
+    clarificationAnswers: [],
+    clarificationComplete: false,
+    documentApproved: false,
+    documentRevisions: [],
+    teamOutputs: [],
+    crossFunctionalLinks: [],
+    events: [],
+    overallProgress: 0,
   };
-  run.runStatusMessage = "Human approval received. Engineering executor is preparing proposed mutations.";
-  run.lastCheckpoint = "HUMAN_APPROVED";
-  run = addTelemetry(run, "ORCHESTRATOR", "HUMAN_APPROVAL_COMMITTED", "Execution approval committed by orchestrator.");
-  run = transition(run, "ENGINEERING", "Human approval committed. Engineering can propose mutations.");
+
+  addEvent(session, "SESSION_CREATED", `New session: "${idea}"`);
+  saveSession(session);
+
+  // Kick off classification asynchronously (don't block response)
+  classifySessionIdea(sessionId).catch(console.error);
+
+  return session;
+}
+
+/* ── STAGE 1 continued: Classify Idea ──────────────────── */
+
+async function classifySessionIdea(sessionId: string): Promise<void> {
+  const session = loadSession(sessionId);
+  if (!session) return;
 
   try {
-    run = await executeEngineering(run);
-    run = transition(run, "VERIFYING", "Engineering mutations committed. Verification started.");
-    run = await verifyRun(run);
+    addEvent(session, "CLASSIFYING", "AI is classifying your idea...");
+    saveSession(session);
 
-    if (run.evidence) {
-      run.runStatusMessage = run.evidence.humanReadableSummary;
-      run.lastCheckpoint = "VERIFICATION_PASSED";
-      run = transition(run, "COMPLETED", "Verification passed with content evidence.");
-    } else {
-      run = failRun(run, "FAILED_VALIDATION", "Verification did not produce evidence.");
+    const classification = await classifyIdea(session.idea);
+    session.ideaType = classification.ideaType;
+    session.sector = classification.sector;
+    session.sessionLabel = classification.suggestedLabel;
+
+    addEvent(session, "CLASSIFIED", `Idea classified as ${classification.ideaType} in ${classification.sector}`);
+
+    // Move to team assembly
+    setStage(session, "TEAM_ASSEMBLY");
+    saveSession(session);
+
+    // Build team proposals
+    await proposeTeams(sessionId);
+  } catch (e: any) {
+    const s = loadSession(sessionId);
+    if (s) { s.stage = "FAILED"; s.failureReason = e.message; saveSession(s); }
+  }
+}
+
+/* ── STAGE 2: Propose Teams ─────────────────────────────── */
+
+async function proposeTeams(sessionId: string): Promise<void> {
+  const session = loadSession(sessionId);
+  if (!session || !session.ideaType) return;
+
+  try {
+    addEvent(session, "ASSEMBLING_TEAM", "MONK AI is selecting the optimal team...");
+    saveSession(session);
+
+    const { teams, summary } = await assembleTeam(session.idea, session.ideaType, session.sector || "General");
+
+    session.proposedTeams = teams.map(t =>
+      buildTeamWorker(t.teamId, t.reason, t.label, t.description)
+    );
+
+    addEvent(session, "TEAM_PROPOSED", `${teams.length} departments proposed: ${teams.map(t => t.label).join(", ")}`);
+    session.updatedAt = now();
+    saveSession(session);
+    // Wait for user to approve teams — stays in TEAM_ASSEMBLY
+  } catch (e: any) {
+    const s = loadSession(sessionId);
+    if (s) { s.stage = "FAILED"; s.failureReason = e.message; saveSession(s); }
+  }
+}
+
+/* ── STAGE 2 → 3: User Approves Teams ──────────────────── */
+
+export async function approveTeams(sessionId: string, req: ApproveTeamsRequest): Promise<MonkSession> {
+  const session = loadSession(sessionId);
+  if (!session) throw new Error("Session not found");
+
+  // Filter approved teams from proposed
+  const approvedWorkers = session.proposedTeams.filter(t => req.teams.includes(t.teamId));
+  session.approvedTeams = approvedWorkers;
+  session.userModifiedTeams = req.teams.length !== session.proposedTeams.length;
+
+  addEvent(session, "TEAMS_APPROVED", `User approved ${approvedWorkers.length} teams`);
+  setStage(session, "CLARIFICATION");
+  saveSession(session);
+
+  // Generate clarifying questions in background
+  generateQuestions(sessionId).catch(console.error);
+  return session;
+}
+
+/* ── STAGE 3: Generate Clarifying Questions ─────────────── */
+
+async function generateQuestions(sessionId: string): Promise<void> {
+  const session = loadSession(sessionId);
+  if (!session || !session.ideaType) return;
+
+  try {
+    addEvent(session, "GENERATING_QUESTIONS", "Preparing discovery questions...");
+    saveSession(session);
+
+    const { questions } = await generateClarifyingQuestions(session.idea, session.ideaType, session.sector || "General");
+    session.clarificationQuestions = questions;
+    session.updatedAt = now();
+    addEvent(session, "QUESTIONS_READY", `${questions.length} questions generated`);
+    saveSession(session);
+    // Wait for user to answer — stays in CLARIFICATION
+  } catch (e: any) {
+    const s = loadSession(sessionId);
+    if (s) { s.stage = "FAILED"; s.failureReason = e.message; saveSession(s); }
+  }
+}
+
+/* ── STAGE 3 → 4: User Answers a Question ──────────────── */
+
+export async function answerQuestion(sessionId: string, answer: ClarificationAnswer): Promise<MonkSession> {
+  const session = loadSession(sessionId);
+  if (!session) throw new Error("Session not found");
+
+  // Remove previous answer for this question if exists
+  session.clarificationAnswers = session.clarificationAnswers.filter(a => a.questionId !== answer.questionId);
+  session.clarificationAnswers.push(answer);
+  session.updatedAt = now();
+
+  const allAnswered = session.clarificationQuestions.every(q =>
+    session.clarificationAnswers.some(a => a.questionId === q.id)
+  );
+
+  if (allAnswered) {
+    session.clarificationComplete = true;
+    addEvent(session, "CLARIFICATION_COMPLETE", "All questions answered. Building startup document...");
+    setStage(session, "DOCUMENT_DRAFT");
+    saveSession(session);
+
+    // Start document building in background
+    buildDocument(sessionId).catch(console.error);
+  } else {
+    saveSession(session);
+  }
+
+  return session;
+}
+
+/* ── STAGE 3 → 4: Skip all remaining questions ──────────── */
+
+export async function skipAllQuestions(sessionId: string): Promise<MonkSession> {
+  const session = loadSession(sessionId);
+  if (!session) throw new Error("Session not found");
+
+  // Fill in null answers for all unanswered questions
+  const answeredIds = new Set(session.clarificationAnswers.map(a => a.questionId));
+  session.clarificationQuestions.forEach(q => {
+    if (!answeredIds.has(q.id)) {
+      session.clarificationAnswers.push({ questionId: q.id, answer: null, skipped: true });
     }
-  } catch (error) {
-    run.retryCount += 1;
-    run = addTelemetry(run, "ENGINEERING_EXECUTOR", "ENGINEERING_ERROR", error instanceof Error ? error.message : "Unknown engineering error.");
-    await saveRun(touch(run));
-
-    if (run.retryCount <= run.maxRetries) {
-      try {
-        run = await executeEngineering(run);
-        run = transition(run, "VERIFYING", "Engineering retry committed. Verification started.");
-        run = await verifyRun(run);
-        if (run.evidence) {
-          run.runStatusMessage = run.evidence.humanReadableSummary;
-          run.lastCheckpoint = "VERIFICATION_PASSED";
-          run = transition(run, "COMPLETED", "Verification passed after engineering retry.");
-        }
-      } catch (retryError) {
-        run = addTelemetry(run, "ORCHESTRATOR", "RETRY_EXHAUSTED", retryError instanceof Error ? retryError.message : "Unknown retry error.");
-        run = failRun(run, "FAILED_ENGINEERING", "Engineering failed after retry limit.");
-      }
-    } else {
-      run = failRun(run, "FAILED_ENGINEERING", "Engineering failed after retry limit.");
-    }
-  }
-
-  await saveRun(touch(run));
-  return run;
-}
-
-export async function getRun(runId: string) {
-  return loadRun(runId);
-}
-
-function transition(run: MonkRun, nextState: RunState, reason: string): MonkRun {
-  const previousState = run.state;
-  if (!allowedTransitions[previousState].includes(nextState)) {
-    const failed = failRun(run, "FAILED_TRANSITION", `Illegal transition ${previousState} -> ${nextState}.`);
-    return addTelemetry(failed, "ORCHESTRATOR", "TRANSITION_REJECTED", reason);
-  }
-
-  const timestamp = new Date().toISOString();
-  return touch({
-    ...run,
-    state: nextState,
-    transitions: [
-      ...run.transitions,
-      {
-        previousState,
-        nextState,
-        reason,
-        timestamp,
-        triggeringAgent: "ORCHESTRATOR",
-      },
-    ],
-    telemetry: [
-      ...run.telemetry,
-      {
-        id: `evt-${String(run.telemetry.length + 1).padStart(3, "0")}`,
-        timestamp,
-        agent: "ORCHESTRATOR",
-        event: "STATE_TRANSITION",
-        detail: `${previousState} -> ${nextState}: ${reason}`,
-      },
-    ],
-  });
-}
-
-async function executeEngineering(run: MonkRun): Promise<MonkRun> {
-  if (!run.productIntent) {
-    throw new Error("Product intent missing.");
-  }
-
-  const proposedMutations = run.proposedMutations.length > 0 ? run.proposedMutations : proposeEngineeringMutations(run.productIntent, run.idea);
-  run.proposedMutations = proposedMutations;
-  run.revisionCycles += 1;
-  run.runStatusMessage = "Human-approved mutations received. Orchestrator is committing files.";
-  run.lastCheckpoint = "ENGINEERING_PROPOSED";
-  run = addTelemetry(run, "ENGINEERING_EXECUTOR", "APPROVED_MUTATIONS_READY", proposedMutations.map((mutation) => mutation.diffSummary).join("; "));
-
-  const committed: ArtifactRecord[] = [];
-  for (const mutation of proposedMutations) {
-    const commitId = `mutation-${String(run.artifacts.length + committed.length + 1).padStart(3, "0")}`;
-    const safePath = normalizeArtifactPath(mutation.path);
-    const target = path.join(getRunAppDir(run.runId), safePath);
-    await mkdir(path.dirname(target), { recursive: true });
-    await writeFile(target, mutation.content, "utf8");
-    committed.push({
-      ...mutation,
-      path: safePath,
-      commitId,
-      verificationStatus: "PENDING",
-    });
-  }
-
-  run.artifacts = [...run.artifacts, ...committed];
-  run.runStatusMessage = `Orchestrator committed ${committed.length} business-specific file mutations.`;
-  run.lastCheckpoint = "MUTATIONS_COMMITTED";
-  return addTelemetry(run, "ORCHESTRATOR", "MUTATIONS_COMMITTED", committed.map((artifact) => `${artifact.commitId}: ${artifact.diffSummary}`).join("; "));
-}
-
-async function verifyRun(run: MonkRun): Promise<MonkRun> {
-  if (!run.productIntent) {
-    return failRun(run, "FAILED_VALIDATION", "Product intent missing during verification.");
-  }
-
-  const vertical = run.productIntent.vertical;
-  const files = run.artifacts.map((artifact) => artifact.path);
-  const contentByPath = new Map(run.artifacts.map((artifact) => [artifact.path, artifact.content.toLowerCase()]));
-  const verificationRules = getVerificationChecks(vertical, run);
-
-  // Build verification checks
-  const checks: VerificationCheck[] = [];
-
-  // Check 1: Package.json exists
-  const hasPackageJson = files.includes("package.json");
-  checks.push({
-    type: "PACKAGE_JSON",
-    name: "Package manifest exists",
-    passed: hasPackageJson,
-    detail: hasPackageJson ? "package.json found in artifacts" : "package.json missing",
-    expected: "package.json",
-    actual: hasPackageJson ? "package.json" : "not found",
-  });
-
-  // Check 2: Route matches
-  const matchedRoutes = verificationRules.routes.filter((route) => files.includes(route));
-  for (const route of verificationRules.routes) {
-    const found = files.includes(route);
-    checks.push({
-      type: "ROUTE_MATCH",
-      name: `Route ${route} exists`,
-      passed: found,
-      detail: found ? `Route ${route} verified` : `Route ${route} not found`,
-      expected: route,
-      actual: found ? route : "not found",
-    });
-  }
-
-  // Check 3: Schema terms
-  const schemaContent = contentByPath.get("lib/schema.ts") || "";
-  for (const term of verificationRules.schemaTerms) {
-    const found = schemaContent.includes(term);
-    checks.push({
-      type: "SCHEMA_TERM",
-      name: `Schema term "${term}" exists`,
-      passed: found,
-      detail: found ? `Term "${term}" found in schema` : `Term "${term}" missing from schema`,
-      expected: term,
-      actual: found ? term : "not found",
-    });
-  }
-
-  // Check 4: Required terms across all files
-  for (const term of verificationRules.requiredTerms) {
-    const found = [...contentByPath.values()].some((content) => content.includes(term));
-    checks.push({
-      type: "REQUIRED_TERM",
-      name: `Required term "${term}" exists`,
-      passed: found,
-      detail: found ? `Term "${term}" found in generated content` : `Term "${term}" missing from all files`,
-      expected: term,
-      actual: found ? term : "not found",
-    });
-  }
-
-  // Check 5: Content validity (each artifact has non-empty content)
-  for (const artifact of run.artifacts) {
-    const hasContent = artifact.content && artifact.content.length > 0;
-    checks.push({
-      type: "CONTENT_VALID",
-      name: `Content valid for ${artifact.path}`,
-      passed: Boolean(hasContent),
-      detail: hasContent ? `${artifact.path} has valid content (${artifact.content.length} chars)` : `${artifact.path} is empty`,
-      expected: "non-empty content",
-      actual: hasContent ? `${artifact.content.length} chars` : "empty",
-    });
-  }
-
-  const passedCount = checks.filter((c) => c.passed).length;
-  const failedCount = checks.filter((c) => !c.passed).length;
-  const passed = failedCount === 0;
-
-  // Update artifact verification status
-  run.artifacts = run.artifacts.map((artifact) => ({
-    ...artifact,
-    verificationStatus: passed ? "PASSED" : "FAILED",
-  }));
-
-  if (!passed) {
-    // Add failed checks to telemetry for debugging
-    const failedChecks = checks.filter((c) => !c.passed);
-    run = addTelemetry(run, "VERIFICATION", "CHECKS_FAILED", `${failedCount} checks failed: ${failedChecks.map((c) => c.name).join(", ")}`);
-    return failRun(run, "FAILED_VALIDATION", `Verification failed: ${failedCount} of ${checks.length} checks did not pass.`);
-  }
-
-  const evidence: VerificationEvidence = {
-    generatedFiles: files,
-    matchedRoutes,
-    matchedSchemas: verificationRules.schemaTerms,
-    telemetrySnapshot: {
-      eventCount: run.telemetry.length,
-      transitionCount: run.transitions.length,
-      artifactCount: run.artifacts.length,
-    },
-    verificationSummary: `Verified ${files.length} generated files, ${matchedRoutes.length} routes, and ${verificationRules.schemaTerms.length} schema terms. All ${passedCount} checks passed.`,
-    humanReadableSummary: buildHumanSummary(vertical),
-    checks,
-    passedCount,
-    failedCount,
-    verifiedAt: new Date().toISOString(),
-  };
-
-  run.evidence = evidence;
-  run.lastCheckpoint = "VERIFICATION_EVIDENCE_RECORDED";
-  run = addTelemetry(run, "VERIFICATION", "CONTENT_VERIFIED", evidence.verificationSummary);
-  return touch(run);
-}
-
-function failRun(run: MonkRun, failureReason: FailureReason, message: string): MonkRun {
-  const nextStateAllowed = allowedTransitions[run.state].includes("FAILED");
-  const failed = touch({
-    ...run,
-    state: nextStateAllowed ? "FAILED" : run.state,
-    failureReason,
-    runStatusMessage: message,
-    lastCheckpoint: failureReason,
   });
 
-  return addTelemetry(failed, "ORCHESTRATOR", failureReason, message);
+  session.clarificationComplete = true;
+  addEvent(session, "CLARIFICATION_SKIPPED", "User skipped remaining questions. AI will decide.");
+  setStage(session, "DOCUMENT_DRAFT");
+  saveSession(session);
+
+  buildDocument(sessionId).catch(console.error);
+  return session;
 }
 
-function addTelemetry(run: MonkRun, agent: AgentName, event: string, detail: string): MonkRun {
-  const timestamp = new Date().toISOString();
-  const telemetry: TelemetryEvent = {
-    id: `evt-${String(run.telemetry.length + 1).padStart(3, "0")}`,
-    timestamp,
-    agent,
-    event,
-    detail,
-  };
+/* ── STAGE 4: Build Document ─────────────────────────────── */
 
-  return touch({
-    ...run,
-    telemetry: [...run.telemetry, telemetry],
-  });
+async function buildDocument(sessionId: string, modifications?: string): Promise<void> {
+  const session = loadSession(sessionId);
+  if (!session || !session.ideaType) return;
+
+  try {
+    addEvent(session, "BUILDING_DOCUMENT", "MONK AI is generating your startup document...");
+    saveSession(session);
+
+    const answersWithContext = session.clarificationAnswers.map(a => {
+      const q = session.clarificationQuestions.find(q => q.id === a.questionId);
+      return { question: q?.question || "", answer: a.answer, skipped: a.skipped };
+    });
+
+    const { document } = await buildStartupDocument(
+      session.idea,
+      session.ideaType,
+      session.sector || "General",
+      answersWithContext,
+      (session.approvedTeams || session.proposedTeams).map(t => t.teamId),
+      modifications
+    );
+
+    session.startupDocument = document;
+    addEvent(session, "DOCUMENT_READY", "Startup document generated. Awaiting human review.");
+    setStage(session, "DOCUMENT_REVIEW");
+    session.overallProgress = 30;
+    saveSession(session);
+  } catch (e: any) {
+    const s = loadSession(sessionId);
+    if (s) { s.stage = "FAILED"; s.failureReason = e.message; saveSession(s); }
+  }
 }
 
-function touch(run: MonkRun): MonkRun {
-  return {
-    ...run,
-    updatedAt: new Date().toISOString(),
-  };
+/* ── STAGE 5: User Reviews Document ─────────────────────── */
+
+export async function reviewDocument(sessionId: string, req: ReviewDocumentRequest): Promise<MonkSession> {
+  const session = loadSession(sessionId);
+  if (!session) throw new Error("Session not found");
+
+  if (req.action === "APPROVE") {
+    session.documentApproved = true;
+    addEvent(session, "DOCUMENT_APPROVED", "Founder approved the startup document. Dispatching to teams...");
+    setStage(session, "TEAM_DISPATCH");
+    session.overallProgress = 40;
+    saveSession(session);
+
+    // Dispatch teams in background
+    dispatchTeams(sessionId).catch(console.error);
+
+  } else if (req.action === "MODIFY" && req.modifications) {
+    session.documentRevisions.push(req.modifications);
+    addEvent(session, "DOCUMENT_REVISION", `Founder requested modifications: ${req.modifications.slice(0, 80)}...`);
+    setStage(session, "DOCUMENT_DRAFT");
+    saveSession(session);
+
+    // Rebuild with modifications
+    buildDocument(sessionId, req.modifications).catch(console.error);
+
+  } else if (req.action === "REFRAME") {
+    session.documentRevisions.push("REFRAME_EVERYTHING");
+    addEvent(session, "DOCUMENT_REFRAME", "Founder chose to reframe. Rebuilding from scratch...");
+    setStage(session, "DOCUMENT_DRAFT");
+    session.startupDocument = undefined;
+    saveSession(session);
+
+    // Rebuild completely
+    buildDocument(sessionId, "Please reframe the entire approach with fresh perspectives.").catch(console.error);
+  }
+
+  return session;
 }
 
-function buildRunLabel(idea: string) {
-  const intent = planProductIntent(idea);
-  if (intent.vertical === "invoice") return "Invoice SaaS Demo Run";
-  if (intent.vertical === "task") return "Task Manager Demo Run";
-  return "Micro-SaaS Demo Run";
+/* ── STAGE 6-9: Team Dispatch & Parallel Execution ─────── */
+
+async function dispatchTeams(sessionId: string): Promise<void> {
+  const session = loadSession(sessionId);
+  if (!session || !session.startupDocument || !session.approvedTeams) return;
+
+  try {
+    // STAGE 6: TEAM_DISPATCH
+    setStage(session, "TEAM_DISPATCH");
+    addEvent(session, "DISPATCHING", "Sending startup document to all departments...");
+    saveSession(session);
+
+    // Brief delay to show dispatch animation
+    await sleep(1500);
+
+    // STAGE 7: PARALLEL_EXECUTION — set all teams to ACTIVE
+    setStage(session, "PARALLEL_EXECUTION");
+    session.approvedTeams.forEach(t => {
+      t.status = "ACTIVE";
+      t.currentTask = "Analyzing startup document...";
+      t.assignedAt = now();
+      t.progress = 5;
+    });
+    session.overallProgress = 45;
+    saveSession(session);
+
+    // Run teams in parallel batches
+    const doc = session.startupDocument;
+    const teamIds = session.approvedTeams.map(t => t.teamId);
+
+    // Execute all teams concurrently
+    const teamPromises = teamIds.map(teamId => executeTeam(sessionId, teamId, doc));
+    await Promise.allSettled(teamPromises);
+
+    // STAGE 8: CROSS_FUNCTIONAL — post team cross-linking
+    const s = loadSession(sessionId);
+    if (!s) return;
+
+    setStage(s, "CROSS_FUNCTIONAL");
+    addEvent(s, "CROSS_FUNCTIONAL", "Teams are communicating and sharing outputs...");
+    generateCrossFunctionalLinks(s);
+    s.overallProgress = 88;
+    saveSession(s);
+
+    await sleep(2000);
+
+    // STAGE 9: OUTPUT_COLLECTION
+    const s2 = loadSession(sessionId);
+    if (!s2) return;
+
+    setStage(s2, "OUTPUT_COLLECTION");
+    addEvent(s2, "COLLECTING", "Assembling all team deliverables...");
+    s2.overallProgress = 95;
+    saveSession(s2);
+
+    await sleep(1500);
+
+    // STAGE 10: COMPLETE
+    const s3 = loadSession(sessionId);
+    if (!s3) return;
+
+    setStage(s3, "COMPLETE");
+    s3.overallProgress = 100;
+    addEvent(s3, "COMPLETE", `All ${s3.approvedTeams?.length || 0} teams finished. ${s3.teamOutputs.length} deliverables ready for download.`);
+    saveSession(s3);
+
+  } catch (e: any) {
+    console.error("dispatchTeams error:", e);
+    const s = loadSession(sessionId);
+    if (s) { s.stage = "FAILED"; s.failureReason = e.message; saveSession(s); }
+  }
 }
 
-function applyApprovalEdits(run: MonkRun, edits?: ApprovalOptions["edits"]): MonkRun {
-  if (!edits) return run;
+async function executeTeam(sessionId: string, teamId: TeamId, doc: import("./types").StartupDocument): Promise<void> {
+  try {
+    let content = "";
+    let outputType: import("./types").OutputType = "PRD";
+    let title = "";
 
-  let updated = run;
-  const telemetryDetails: string[] = [];
+    // Update progress: working
+    updateTeamProgress(sessionId, teamId, 20, "Analyzing requirements...");
+    await sleep(500 + Math.random() * 1000);
 
-  if (edits.runLabel) {
-    const safeLabel = edits.runLabel.trim().slice(0, 80);
-    if (safeLabel) {
-      updated = {
-        ...updated,
-        runLabel: safeLabel,
-      };
-      telemetryDetails.push(`runLabel changed to "${safeLabel}"`);
+    // Generate team-specific output
+    switch (teamId) {
+      case "PRODUCT":
+        updateTeamProgress(sessionId, teamId, 40, "Writing PRD and user stories...");
+        content = await runProductTeam(doc);
+        outputType = "PRD"; title = "Product Requirements Document";
+        break;
+      case "ENGINEERING":
+        updateTeamProgress(sessionId, teamId, 40, "Building technical architecture and website code...");
+        const engOut = await runEngineeringTeam(doc);
+        // Store TRD
+        pushTeamOutput(sessionId, teamId, "TRD", "Technical Requirements Document", engOut.trd);
+        // Store website
+        content = engOut.websiteCode;
+        outputType = "WEBSITE_CODE"; title = "Working Website (Next.js)";
+        break;
+      case "DESIGN":
+        updateTeamProgress(sessionId, teamId, 40, "Creating design system and brand guidelines...");
+        content = await runDesignTeam(doc);
+        outputType = "DESIGN_SYSTEM"; title = "Design System & Brand Guide";
+        break;
+      case "RESEARCH":
+        updateTeamProgress(sessionId, teamId, 40, "Conducting technology and market research...");
+        content = await runResearchTeam(doc);
+        outputType = "RD_REPORT"; title = "R&D Technology Assessment";
+        break;
+      case "MARKETING":
+        updateTeamProgress(sessionId, teamId, 40, "Building go-to-market strategy...");
+        content = await runMarketingTeam(doc);
+        outputType = "GTM_STRATEGY"; title = "Go-to-Market Strategy";
+        break;
+      case "FINANCE":
+        updateTeamProgress(sessionId, teamId, 40, "Modeling financial projections...");
+        content = await runFinanceTeam(doc);
+        outputType = "FINANCIAL_PROJECTIONS"; title = "12-Month Financial Projections";
+        break;
+      case "LEGAL":
+        updateTeamProgress(sessionId, teamId, 40, "Drafting legal compliance checklist...");
+        content = await runLegalTeam(doc);
+        outputType = "LEGAL_CHECKLIST"; title = "Legal & Compliance Checklist";
+        break;
+      case "SALES":
+        updateTeamProgress(sessionId, teamId, 40, "Writing sales playbook and ICP...");
+        content = await runSalesTeam(doc);
+        outputType = "GTM_STRATEGY"; title = "Sales Strategy & Growth Playbook";
+        break;
+      default:
+        updateTeamProgress(sessionId, teamId, 40, `${TEAM_DEFINITIONS[teamId]?.label || teamId} team working...`);
+        content = await runGenericTeam(teamId, doc);
+        outputType = "PRD"; title = `${TEAM_DEFINITIONS[teamId]?.label || teamId} Deliverable`;
+        break;
     }
+
+    updateTeamProgress(sessionId, teamId, 80, "Finalizing deliverable...");
+    pushTeamOutput(sessionId, teamId, outputType, title, content);
+    updateTeamProgress(sessionId, teamId, 100, "Deliverable complete ✓", "DONE");
+
+  } catch (e: any) {
+    updateTeamProgress(sessionId, teamId, 0, `Error: ${e.message}`, "BLOCKED");
   }
-
-  if (edits.apiRouteName && updated.productIntent) {
-    const routeName = sanitizeRouteSegment(edits.apiRouteName);
-    if (routeName) {
-      const oldApiRoute = updated.productIntent.routes.find((route) => route.startsWith("/api/"));
-      const nextApiRoute = `/api/${routeName}`;
-      updated = {
-        ...updated,
-        productIntent: {
-          ...updated.productIntent,
-          routes: updated.productIntent.routes.map((route) => (route === oldApiRoute ? nextApiRoute : route)),
-        },
-        proposedMutations: updated.proposedMutations.map((mutation) => rewriteApiRouteMutation(mutation, routeName)),
-      };
-      telemetryDetails.push(`API route changed from ${oldApiRoute || "default"} to ${nextApiRoute}`);
-    }
-  }
-
-  if (telemetryDetails.length === 0) return updated;
-
-  updated.runStatusMessage = `Human edited shared memory: ${telemetryDetails.join("; ")}.`;
-  updated.lastCheckpoint = "HUMAN_STATE_EDITED";
-  return addTelemetry(updated, "HUMAN_APPROVAL", "SAFE_STATE_MUTATION", telemetryDetails.join("; "));
 }
 
-function sanitizeRouteSegment(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 32);
+function updateTeamProgress(sessionId: string, teamId: TeamId, progress: number, task: string, status?: import("./types").TeamStatus) {
+  const s = loadSession(sessionId);
+  if (!s) return;
+  const team = s.approvedTeams?.find(t => t.teamId === teamId) || s.proposedTeams.find(t => t.teamId === teamId);
+  if (!team) return;
+  team.progress = progress;
+  team.currentTask = task;
+  if (status) { team.status = status; if (status === "DONE") team.completedAt = now(); }
+  addTeamActivity(s, teamId, task, status === "DONE" ? "OUTPUT_READY" : "UPDATE");
+  const allTeams = s.approvedTeams || s.proposedTeams;
+  s.overallProgress = Math.min(88, 45 + (allTeams.reduce((sum, t) => sum + t.progress, 0) / allTeams.length) * 0.43);
+  saveSession(s);
 }
 
-function rewriteApiRouteMutation(mutation: ArtifactRecord | MonkRun["proposedMutations"][number], routeName: string) {
-  if (!mutation.path.startsWith("app/api/")) return mutation;
-
-  const previousPath = mutation.path;
-  return {
-    ...mutation,
-    path: `app/api/${routeName}/route.ts`,
-    content: mutation.content.replace(/(invoices|tasks|workspace)/gi, routeName),
-    reasoningSummary: `${mutation.reasoningSummary} Human approval renamed API route from ${previousPath} to app/api/${routeName}/route.ts.`,
-    diffSummary: `Renamed API route to /api/${routeName}`,
+function pushTeamOutput(sessionId: string, teamId: TeamId, outputType: import("./types").OutputType, title: string, content: string) {
+  const s = loadSession(sessionId);
+  if (!s) return;
+  const output: TeamOutput = {
+    teamId, outputType, title, content,
+    completedAt: now(),
+    wordCount: content.split(/\s+/).length,
   };
+  s.teamOutputs.push(output);
+  // Also update team's own output ref
+  const team = s.approvedTeams?.find(t => t.teamId === teamId) || s.proposedTeams.find(t => t.teamId === teamId);
+  if (team) team.output = output;
+  saveSession(s);
 }
 
-function normalizeArtifactPath(artifactPath: string) {
-  const normalized = path
-    .normalize(artifactPath)
-    .replace(/^(\.\.(\/|\\|$))+/, "")
-    .replace(/\\/g, "/");
-  if (path.isAbsolute(normalized) || normalized.includes("..")) {
-    throw new Error(`Unsafe artifact path rejected: ${artifactPath}`);
+function generateCrossFunctionalLinks(session: MonkSession) {
+  const teams = (session.approvedTeams || session.proposedTeams).map(t => t.teamId);
+  const links: MonkSession["crossFunctionalLinks"] = [];
+
+  // Product → Engineering (PRD feeds tech build)
+  if (teams.includes("PRODUCT") && teams.includes("ENGINEERING")) {
+    links.push({ fromTeam: "PRODUCT", toTeam: "ENGINEERING", dataType: "PRD → Tech Specs", timestamp: now() });
+    addTeamActivity(session, "ENGINEERING", "Received PRD from Product team", "CROSS_FUNCTIONAL", "PRODUCT");
   }
-  return normalized;
+  // Design → Engineering (design feeds implementation)
+  if (teams.includes("DESIGN") && teams.includes("ENGINEERING")) {
+    links.push({ fromTeam: "DESIGN", toTeam: "ENGINEERING", dataType: "Design System → UI Implementation", timestamp: now() });
+    addTeamActivity(session, "ENGINEERING", "Received design system from Design team", "CROSS_FUNCTIONAL", "DESIGN");
+  }
+  // Research → Product (research feeds product decisions)
+  if (teams.includes("RESEARCH") && teams.includes("PRODUCT")) {
+    links.push({ fromTeam: "RESEARCH", toTeam: "PRODUCT", dataType: "R&D Report → Feature Decisions", timestamp: now() });
+    addTeamActivity(session, "PRODUCT", "Received R&D insights from Research team", "CROSS_FUNCTIONAL", "RESEARCH");
+  }
+  // Finance → Marketing (budget feeds channel strategy)
+  if (teams.includes("FINANCE") && teams.includes("MARKETING")) {
+    links.push({ fromTeam: "FINANCE", toTeam: "MARKETING", dataType: "Budget → Marketing Spend", timestamp: now() });
+    addTeamActivity(session, "MARKETING", "Received budget from Finance team", "CROSS_FUNCTIONAL", "FINANCE");
+  }
+  // Legal → Compliance (legal feeds compliance)
+  if (teams.includes("LEGAL") && teams.includes("COMPLIANCE")) {
+    links.push({ fromTeam: "LEGAL", toTeam: "COMPLIANCE", dataType: "Legal Checklist → Compliance Framework", timestamp: now() });
+  }
+  // Marketing → Sales (GTM feeds sales)
+  if (teams.includes("MARKETING") && teams.includes("SALES")) {
+    links.push({ fromTeam: "MARKETING", toTeam: "SALES", dataType: "GTM Strategy → Sales Playbook", timestamp: now() });
+    addTeamActivity(session, "SALES", "Received GTM strategy from Marketing team", "CROSS_FUNCTIONAL", "MARKETING");
+  }
+
+  session.crossFunctionalLinks = links;
 }
 
-function getVerificationChecks(vertical: ProductVertical, run: MonkRun) {
-  const expectedRoutes = run.productIntent?.routes.map(routeToArtifactPath) || [];
-
-  if (vertical === "invoice") {
-    return {
-      routes: expectedRoutes,
-      schemaTerms: ["invoice", "paymentstatus", "amountcents", "duedate"],
-      requiredTerms: ["invoice", "payment", "overdue", "clientname"],
-    };
-  }
-
-  if (vertical === "task") {
-    return {
-      routes: expectedRoutes,
-      schemaTerms: ["task", "taskstatus", "priority", "duedate"],
-      requiredTerms: ["kanban", "task", "owner", "in-progress"],
-    };
-  }
-
-  return {
-    routes: expectedRoutes,
-    schemaTerms: ["workspacerecord", "customer", "nextaction", "status"],
-    requiredTerms: ["workspace", "customer", "next action", "status"],
-  };
-}
-
-function routeToArtifactPath(route: string) {
-  if (route === "/") return "app/page.tsx";
-  if (route.startsWith("/api/")) return `app/api/${route.replace("/api/", "")}/route.ts`;
-  return `app/${route.replace(/^\//, "")}/page.tsx`;
-}
-
-function buildHumanSummary(vertical: ProductVertical) {
-  if (vertical === "invoice") {
-    return "Invoice SaaS scaffold successfully generated with invoice schema, payment fields, API handlers, and dashboard components.";
-  }
-
-  if (vertical === "task") {
-    return "Task manager scaffold successfully generated with task schema, kanban routes, task API handlers, and dashboard components.";
-  }
-
-  return "Micro-SaaS scaffold successfully generated with workspace schema, API handlers, operating routes, and dashboard components.";
-}
+function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
