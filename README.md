@@ -2,7 +2,6 @@
   <h1>MONK AI</h1>
   <p><strong>Turn Any Idea Into a Company — Autonomous Execution Engine</strong></p>
   <p>
-    <a href="https://github.com/callmerishi1508/Monk-AI/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
     <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-15-black?logo=next.js" alt="Next.js" /></a>
     <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-Ready-blue?logo=typescript" alt="TypeScript" /></a>
     <img src="https://img.shields.io/badge/Status-MVP-success" alt="Status: MVP" />
@@ -104,10 +103,6 @@ We believe the future of software development involves tight collaboration betwe
 3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the Branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
-
-## 📜 License
-
-Distributed under the MIT License. See `LICENSE` for more information.
 
 ---
 <div align="center">
