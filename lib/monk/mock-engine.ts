@@ -145,6 +145,61 @@ export function mockStartupDocument(idea: string, ideaType: IdeaType, sector: st
   const isProblem = ideaType === "PROBLEM_STATEMENT";
   const name = sector + " Platform";
 
+  let sectorFeatures = [
+    { name: "AI-Powered Dashboard", description: "Real-time intelligence hub with automated insights, alerts, and recommendations", priority: "MUST_HAVE", effort: "HIGH", userStory: "As a user, I want to see all my key metrics in one place so I can make data-driven decisions instantly." },
+    { name: "Automated Workflow Engine", description: "No-code automation builder that handles repetitive tasks across the platform", priority: "MUST_HAVE", effort: "HIGH", userStory: "As a user, I want to automate my most repetitive workflows so I can focus on high-value activities." },
+    { name: "Collaboration Hub", description: "Real-time team workspace with comments, assignments, and progress tracking", priority: "MUST_HAVE", effort: "MEDIUM", userStory: "As a team member, I want to collaborate seamlessly so we move faster together." },
+    { name: "Smart Reporting", description: "One-click reports with AI-generated summaries and exportable data", priority: "SHOULD_HAVE", effort: "MEDIUM", userStory: "As a manager, I want beautiful reports automatically generated so I can share progress with stakeholders." },
+    { name: "API & Integrations", description: "Connect with 50+ popular tools including Slack, Notion, and Google Workspace", priority: "SHOULD_HAVE", effort: "MEDIUM", userStory: "As a power user, I want to integrate with my existing tools so my workflow isn't disrupted." },
+    { name: "Mobile App", description: "Native iOS and Android apps with full feature parity", priority: "NICE_TO_HAVE", effort: "HIGH", userStory: "As a mobile user, I want to manage everything from my phone so I stay productive anywhere." },
+  ];
+
+  let sectorCompetitors = [
+    { name: "Legacy Market Leader", strengths: ["Brand recognition", "Large user base", "Established integrations"], weaknesses: ["Outdated UX", "Expensive pricing", "Slow innovation"], differentiator: "We ship 10x faster and at 80% lower cost with a modern UX" },
+    { name: "VC-Backed Startup A", strengths: ["Modern design", "Good funding"], weaknesses: ["Limited features", "Early stage instability", "No AI"], differentiator: "Our AI layer provides capabilities they'll take 2+ years to build" },
+    { name: "Enterprise Giant", strengths: ["Enterprise sales", "Compliance features"], weaknesses: ["6-12 month implementation", "$100K+ contracts", "Complex UX"], differentiator: "Self-serve onboarding in minutes, not months" },
+  ];
+
+  let sectorPersonas = [
+    { name: "Alex — The Hustling Founder", age: "25-35", role: "First-time startup founder", painPoints: ["No time to learn complex tools", "Limited budget", "Needs to move fast"], goals: ["Ship MVP in 3 months", "Find first 10 customers", "Prove the concept before fundraising"], techSavviness: "MEDIUM" },
+    { name: "Sam — The Growth PM", age: "28-40", role: "Product Manager at a growing startup", painPoints: ["Too many disconnected tools", "Manual reporting takes hours", "Team alignment is painful"], goals: ["Ship features faster", "Better visibility into metrics", "Reduce tool sprawl"], techSavviness: "HIGH" },
+    { name: "Jordan — The SMB Owner", age: "35-55", role: "Owner of a 10-50 person business", painPoints: ["Not technical, needs simplicity", "Can't afford enterprise solutions", "Wants results, not complexity"], goals: ["Automate repetitive work", "Understand business metrics", "Compete with larger players"], techSavviness: "LOW" },
+  ];
+
+  if (sector.includes("Dating") || sector.includes("Social")) {
+    sectorFeatures = [
+      { name: "AI Matchmaking Engine", description: "Hyper-personalized matching algorithm based on deep behavioral data and preferences", priority: "MUST_HAVE", effort: "HIGH", userStory: "As a user, I want highly relevant matches so I don't waste time on incompatible people." },
+      { name: "Identity Verification", description: "Automated liveness checks and ID scanning to prevent catfishing", priority: "MUST_HAVE", effort: "MEDIUM", userStory: "As a user, I want to know the people I talk to are real." },
+      { name: "Secure Messaging & Video", description: "In-app encrypted communication to foster connections safely", priority: "MUST_HAVE", effort: "MEDIUM", userStory: "As a user, I want to chat safely before giving out my personal contact info." },
+      { name: "Trust & Safety Hub", description: "Automated moderation for inappropriate content, spam, and harassment", priority: "MUST_HAVE", effort: "HIGH", userStory: "As a user, I want to feel safe and respected while using the platform." },
+      { name: "Icebreaker Generator", description: "AI-suggested conversation starters based on shared interests", priority: "SHOULD_HAVE", effort: "LOW", userStory: "As a user, I want help starting conversations to overcome awkwardness." },
+      { name: "IRL Event Planner", description: "Curated, safe public spots for first dates integrated directly into the app", priority: "NICE_TO_HAVE", effort: "MEDIUM", userStory: "As a user, I want easy, safe suggestions for where to meet." }
+    ];
+    sectorCompetitors = [
+      { name: "Tinder / Bumble", strengths: ["Massive network effects", "Global brand recognition"], weaknesses: ["Superficial swiping culture", "High user fatigue and churn"], differentiator: "Our AI focuses on deep compatibility and verified, intentional connections." },
+      { name: "Hinge", strengths: ["Intent-driven profiles", "Better engagement"], weaknesses: ["Expensive premium tiers", "Limited search filters"], differentiator: "We offer vastly superior matchmaking intelligence at a fraction of the cost." }
+    ];
+    sectorPersonas = [
+      { name: "Jordan — The Intentional Dater", age: "25-35", role: "Young Professional", painPoints: ["Burnout from endless swiping", "Fake profiles and ghosting", "Superficial connections"], goals: ["Find a meaningful, long-term relationship", "Save time filtering out incompatible matches"], techSavviness: "HIGH" },
+      { name: "Alex — The Social Explorer", age: "18-25", role: "Student / Graduate", painPoints: ["Hard to meet genuine people in a new city", "Anxiety around first dates"], goals: ["Make genuine connections safely", "Have fun meeting new people"], techSavviness: "HIGH" }
+    ];
+  } else if (sector.includes("FinTech") || sector.includes("Trading") || sector.includes("Crypto") || sector.includes("Web3")) {
+    sectorFeatures = [
+      { name: "Real-time Trading Engine", description: "Low-latency execution engine for trades and transactions", priority: "MUST_HAVE", effort: "HIGH", userStory: "As a user, I want my trades executed instantly at the exact price I see." },
+      { name: "Automated KYC/AML", description: "Frictionless identity verification and compliance checks", priority: "MUST_HAVE", effort: "HIGH", userStory: "As a user, I want to open an account quickly without jumping through manual hoops." },
+      { name: "Portfolio Analytics", description: "Deep AI-driven insights into portfolio performance and risk", priority: "MUST_HAVE", effort: "MEDIUM", userStory: "As a user, I want to understand my financial health at a glance." },
+      { name: "Bank-Grade Security", description: "End-to-end encryption, 2FA, and cold storage protocols", priority: "MUST_HAVE", effort: "HIGH", userStory: "As a user, I want absolute certainty my funds and data are safe." },
+      { name: "Tax Reporting Automation", description: "One-click generation of tax documents and liability estimates", priority: "SHOULD_HAVE", effort: "MEDIUM", userStory: "As a user, I want tax season to be completely pain-free." }
+    ];
+  } else if (sector.includes("Health") || sector.includes("Bio")) {
+    sectorFeatures = [
+      { name: "HIPAA-Compliant Records", description: "Secure, encrypted storage of Electronic Health Records (EHR)", priority: "MUST_HAVE", effort: "HIGH", userStory: "As a user, I want my medical data stored with maximum privacy and compliance." },
+      { name: "Telehealth Portal", description: "High-definition video consultations with integrated notes", priority: "MUST_HAVE", effort: "MEDIUM", userStory: "As a patient, I want to see a doctor remotely without leaving my home." },
+      { name: "AI Symptom Triage", description: "Intelligent chatbot to assess urgency and route to the right care", priority: "MUST_HAVE", effort: "HIGH", userStory: "As a patient, I want immediate guidance on whether I need urgent care." },
+      { name: "Prescription Management", description: "Automated refills and pharmacy routing", priority: "SHOULD_HAVE", effort: "MEDIUM", userStory: "As a user, I want my medications refilled automatically before I run out." }
+    ];
+  }
+
   return {
     ideaType,
     executiveSummary: `${name} is a next-generation ${sector} solution designed to transform how founders, businesses, and consumers approach ${idea.toLowerCase().replace("i want to ", "").replace("build a", "").trim()}. By leveraging modern AI and automation, we eliminate the friction, cost, and complexity that currently plague this space — delivering a 10x better experience at a fraction of the cost.`,
@@ -152,10 +207,10 @@ export function mockStartupDocument(idea: string, ideaType: IdeaType, sector: st
       ? `The current ${sector} landscape is fragmented, expensive, and inaccessible to most stakeholders. Existing solutions require excessive manual effort, technical expertise, and capital — creating a massive barrier for the majority of potential users. The market is ripe for disruption.`
       : undefined,
     solution: `An AI-powered ${sector} platform that automates the most critical workflows, provides real-time intelligence, and delivers enterprise-grade capabilities at startup-friendly pricing. Our platform combines cutting-edge technology with intuitive design to make ${sector} accessible to everyone.`,
-    vision: `To become the world's most trusted ${sector} operating system — the platform that powers the next generation of businesses in this space.`,
-    mission: `Empower every founder, business, and consumer in the ${sector} space with the tools, intelligence, and automation they need to succeed — regardless of their technical background or budget.`,
-    uniqueValueProposition: `The only ${sector} platform that combines AI automation, real-time intelligence, and cross-functional team coordination into a single, beautiful product — delivering results 10x faster at 80% lower cost than alternatives.`,
-    targetMarket: `The global ${sector} market is estimated at $50B+ and growing at 25% YoY. Our initial target segment — tech-savvy founders and SMBs — represents a $5B addressable market. With enterprise expansion in Year 2, TAM grows to $20B+.`,
+    vision: `To become the world's most trusted ${sector} platform — powering the next generation of experiences in this space.`,
+    mission: `Empower every user in the ${sector} space with the tools, intelligence, and automation they need to succeed — regardless of their technical background or budget.`,
+    uniqueValueProposition: `The only ${sector} platform that combines AI automation, real-time intelligence, and seamless user experience into a single, beautiful product — delivering results 10x faster at 80% lower cost than alternatives.`,
+    targetMarket: `The global ${sector} market is estimated at $50B+ and growing at 25% YoY. Our initial target segment represents a $5B addressable market. With expansion in Year 2, TAM grows to $20B+.`,
     goals: [
       { title: "Launch MVP", description: "Ship a working product with core features to first 100 users", metric: "100 active users", timeline: "Month 3" },
       { title: "Product-Market Fit", description: "Achieve strong retention and NPS from early adopters", metric: "40%+ week-2 retention, NPS > 50", timeline: "Month 6" },
@@ -163,19 +218,9 @@ export function mockStartupDocument(idea: string, ideaType: IdeaType, sector: st
       { title: "Series Seed", description: "Raise seed funding to accelerate growth", metric: "$500K raised", timeline: "Month 12" },
       { title: "Market Leadership", description: "Become recognized leader in our segment", metric: "1,000 active customers", timeline: "Month 18" },
     ],
-    features: [
-      { name: "AI-Powered Dashboard", description: "Real-time intelligence hub with automated insights, alerts, and recommendations", priority: "MUST_HAVE", effort: "HIGH", userStory: "As a user, I want to see all my key metrics in one place so I can make data-driven decisions instantly." },
-      { name: "Automated Workflow Engine", description: "No-code automation builder that handles repetitive tasks across the platform", priority: "MUST_HAVE", effort: "HIGH", userStory: "As a user, I want to automate my most repetitive workflows so I can focus on high-value activities." },
-      { name: "Collaboration Hub", description: "Real-time team workspace with comments, assignments, and progress tracking", priority: "MUST_HAVE", effort: "MEDIUM", userStory: "As a team member, I want to collaborate seamlessly so we move faster together." },
-      { name: "Smart Reporting", description: "One-click reports with AI-generated summaries and exportable data", priority: "SHOULD_HAVE", effort: "MEDIUM", userStory: "As a manager, I want beautiful reports automatically generated so I can share progress with stakeholders." },
-      { name: "API & Integrations", description: "Connect with 50+ popular tools including Slack, Notion, and Google Workspace", priority: "SHOULD_HAVE", effort: "MEDIUM", userStory: "As a power user, I want to integrate with my existing tools so my workflow isn't disrupted." },
-      { name: "Mobile App", description: "Native iOS and Android apps with full feature parity", priority: "NICE_TO_HAVE", effort: "HIGH", userStory: "As a mobile user, I want to manage everything from my phone so I stay productive anywhere." },
-    ],
-    competitorAnalysis: [
-      { name: "Legacy Market Leader", strengths: ["Brand recognition", "Large user base", "Established integrations"], weaknesses: ["Outdated UX", "Expensive pricing", "Slow innovation"], differentiator: "We ship 10x faster and at 80% lower cost with a modern UX" },
-      { name: "VC-Backed Startup A", strengths: ["Modern design", "Good funding"], weaknesses: ["Limited features", "Early stage instability", "No AI"], differentiator: "Our AI layer provides capabilities they'll take 2+ years to build" },
-      { name: "Enterprise Giant", strengths: ["Enterprise sales", "Compliance features"], weaknesses: ["6-12 month implementation", "$100K+ contracts", "Complex UX"], differentiator: "Self-serve onboarding in minutes, not months" },
-    ],
+    features: sectorFeatures as any,
+
+    competitorAnalysis: sectorCompetitors as any,
     techStack: [
       { layer: "Frontend", technology: "Next.js 15 + TypeScript + TailwindCSS", reason: "Best-in-class developer experience, SEO, and performance" },
       { layer: "Backend", technology: "Node.js + tRPC + Prisma", reason: "Type-safe end-to-end, rapid development, excellent DX" },
@@ -218,11 +263,7 @@ export function mockStartupDocument(idea: string, ideaType: IdeaType, sector: st
       { name: "Lifetime Value (LTV)", target: "> $500", measurement: "ARPU × average retention months" },
       { name: "LTV:CAC Ratio", target: "> 3:1", measurement: "LTV divided by CAC" },
     ],
-    userPersonas: [
-      { name: "Alex — The Hustling Founder", age: "25-35", role: "First-time startup founder", painPoints: ["No time to learn complex tools", "Limited budget", "Needs to move fast"], goals: ["Ship MVP in 3 months", "Find first 10 customers", "Prove the concept before fundraising"], techSavviness: "MEDIUM" },
-      { name: "Sam — The Growth PM", age: "28-40", role: "Product Manager at a growing startup", painPoints: ["Too many disconnected tools", "Manual reporting takes hours", "Team alignment is painful"], goals: ["Ship features faster", "Better visibility into metrics", "Reduce tool sprawl"], techSavviness: "HIGH" },
-      { name: "Jordan — The SMB Owner", age: "35-55", role: "Owner of a 10-50 person business", painPoints: ["Not technical, needs simplicity", "Can't afford enterprise solutions", "Wants results, not complexity"], goals: ["Automate repetitive work", "Understand business metrics", "Compete with larger players"], techSavviness: "LOW" },
-    ],
+    userPersonas: sectorPersonas as any,
     sector,
     suggestedLabel: `${sector} Platform`,
     generatedAt: new Date().toISOString(),
