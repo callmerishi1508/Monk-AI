@@ -88,7 +88,33 @@ export default function Home() {
   const [showHistory, setShowHistory] = useState(false);
   const [activeOutputTab, setActiveOutputTab] = useState<string | null>(null);
   const [drawerOutput, setDrawerOutput] = useState<{ title: string; content: string; type: string } | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Load API keys from local storage
+  useEffect(() => {
+    const savedKey = localStorage.getItem("MONK_API_KEY");
+    const savedUrl = localStorage.getItem("MONK_BASE_URL");
+    if (savedKey) setApiKey(savedKey);
+    if (savedUrl) setBaseUrl(savedUrl);
+  }, []);
+
+  async function saveSettings() {
+    localStorage.setItem("MONK_API_KEY", apiKey);
+    localStorage.setItem("MONK_BASE_URL", baseUrl);
+    try {
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey, baseUrl }),
+      });
+    } catch (e) {
+      console.error("Failed to save settings to backend", e);
+    }
+    setShowSettings(false);
+  }
 
   // Rotate example prompts
   useEffect(() => {
@@ -266,6 +292,30 @@ export default function Home() {
         </div>
       )}
 
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowSettings(false)} />
+          <div className="relative w-full max-w-md bg-[#07070f] border border-white/[0.08] rounded-2xl p-6 shadow-2xl">
+            <h2 className="text-lg font-bold text-white mb-4">Settings</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-[#52525B] mb-1.5">OpenAI API Key</label>
+                <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-..." className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500/50 outline-none" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-[#52525B] mb-1.5">Base URL</label>
+                <input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://api.openai.com/v1" className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500/50 outline-none" />
+              </div>
+              <div className="flex items-center gap-3 pt-2">
+                <button onClick={saveSettings} className="flex-1 bg-white text-black text-xs font-bold py-2.5 rounded-lg hover:bg-emerald-50 transition-all">Save Changes</button>
+                <button onClick={() => setShowSettings(false)} className="px-4 py-2.5 rounded-lg border border-white/[0.08] text-xs font-bold text-[#71717A] hover:text-white transition-all">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Workspace */}
       <div className="min-h-screen bg-[#050508] text-white flex flex-col">
         {/* Ambient orbs */}
@@ -313,7 +363,13 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setShowSettings(true)} className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-1.5 text-xs text-[#A1A1AA] hover:text-white hover:bg-white/[0.05] transition-all">
+                <Settings size={14} /> Settings
+              </button>
+              <button onClick={() => setShowHistory(true)} className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-1.5 text-xs text-[#A1A1AA] hover:text-white hover:bg-white/[0.05] transition-all">
+                <Clock size={14} /> History
+              </button>
               {isProcessing && (
                 <span className="flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/8 px-2.5 py-1 text-[8px] font-bold uppercase tracking-widest text-blue-400">
                   <Loader2 size={9} className="animate-spin" />Processing
@@ -358,17 +414,32 @@ export default function Home() {
           </aside>
 
           {/* CENTER — Main stage UI */}
-          <main className="flex-1 min-w-0 p-4 sm:p-6 overflow-y-auto">
-            <StageUI
-              session={session}
-              onApproveTeams={approveTeams}
-              onAnswerQuestion={answerQuestion}
-              onSkipAll={skipAllQuestions}
-              onReviewDocument={reviewDocument}
-              onDownloadDocument={downloadDocument}
-              onViewOutput={o => setDrawerOutput({ title: o.title, content: o.content, type: o.outputType })}
-              onDownloadOutput={downloadOutput}
-            />
+          <main className="flex-1 min-w-0 p-4 sm:p-8 overflow-y-auto">
+            {session.sessionLabel.includes("Demo Mode") && (
+              <div className="max-w-4xl mx-auto mb-6 bg-orange-500/10 border border-orange-500/20 text-orange-300 px-4 py-3 rounded-lg flex items-start sm:items-center gap-3 text-sm shadow-[0_0_15px_rgba(249,115,22,0.1)]">
+                <AlertTriangle size={18} className="shrink-0 mt-0.5 sm:mt-0" />
+                <div>
+                  <strong className="font-semibold block sm:inline">Offline Fallback Mode Active: </strong>
+                  <span>API quota exceeded or no valid key found. MONK AI has safely shifted to its local deterministic mock engine.</span>
+                </div>
+                <button onClick={() => setShowSettings(true)} className="ml-auto shrink-0 px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 rounded text-xs font-bold transition-colors">
+                  Configure API
+                </button>
+              </div>
+            )}
+
+            <div className="max-w-4xl mx-auto">
+              <StageUI
+                session={session}
+                onApproveTeams={approveTeams}
+                onAnswerQuestion={answerQuestion}
+                onSkipAll={skipAllQuestions}
+                onReviewDocument={reviewDocument}
+                onDownloadDocument={downloadDocument}
+                onViewOutput={o => setDrawerOutput({ title: o.title, content: o.content, type: o.outputType })}
+                onDownloadOutput={downloadOutput}
+              />
+            </div>
           </main>
 
           {/* RIGHT — Live Activity Feed */}

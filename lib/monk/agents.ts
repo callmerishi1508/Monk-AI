@@ -14,7 +14,21 @@ import {
   mockStartupDocument, mockTeamOutput, mockWebsiteCode,
 } from "./mock-engine";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "mock" });
+export let openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY || "mock",
+  baseURL: process.env.OPENAI_BASE_URL // Required to route to AnythingLLM
+});
+
+export function configureOpenAI(apiKey: string, baseUrl?: string) {
+  process.env.OPENAI_API_KEY = apiKey;
+  if (baseUrl) process.env.OPENAI_BASE_URL = baseUrl;
+  
+  openai = new OpenAI({
+    apiKey: apiKey || "mock",
+    baseURL: baseUrl || undefined
+  });
+  _apiAvailable = null; // Reset API status to try again
+}
 
 /* ── API availability tracking ──────────────────────────── */
 // null = unknown (will try), false = quota hit (use mock), true = working
@@ -33,23 +47,28 @@ async function gpt<T>(
   userPrompt: string,
   maxTokens = 2000
 ): Promise<T> {
-  const res = await openai.chat.completions.create({
-    model: "gpt-4o",
-    temperature: 0.7,
-    max_tokens: maxTokens,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-  });
-  _apiAvailable = true;
-  return JSON.parse(res.choices[0].message.content || "{}") as T;
+  try {
+    const res = await openai.chat.completions.create({
+      model: "gpt-4o",
+      temperature: 0.7,
+      max_tokens: maxTokens,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    });
+    _apiAvailable = true;
+    return JSON.parse(res.choices[0].message.content || "{}") as T;
+  } catch (error) {
+    console.error("\n🚨 [MONK AI] API Error:", error instanceof Error ? error.message : error);
+    throw error;
+  }
 }
 
 function isQuotaError(e: unknown): boolean {
   const err = e as { status?: number; code?: string; message?: string };
-  return err?.status === 429 || err?.code === "insufficient_quota" || Boolean(String(err?.message).match(/quota|billing|rate.limit/i));
+  return err?.status === 429 || err?.status === 401 || err?.code === "insufficient_quota" || err?.code === "invalid_api_key" || Boolean(String(err?.message).match(/quota|billing|rate.limit|unauthorized|invalid/i));
 }
 
 /* ── Stage 1: Idea Classification ──────────────────────── */
@@ -62,7 +81,14 @@ export async function classifyIdea(idea: string): Promise<{
   problemStatement?: string;
   suggestedLabel: string;
 }> {
-  if (!isApiOn()) return mockClassifyIdea(idea);
+  const getDemoFallback = () => {
+    const fallback = mockClassifyIdea(idea);
+    fallback.suggestedLabel = `⚡ Demo Mode: ${fallback.suggestedLabel}`;
+    fallback.summary = `[SYSTEM ALERT: Live API Quota Exhausted. MONK AI has seamlessly shifted to its local deterministic offline engine.] ${fallback.summary}`;
+    return fallback;
+  };
+
+  if (!isApiOn()) return getDemoFallback();
   try {
     return await gpt(
       `You are MONK AI's idea classification engine. Analyze startup ideas regardless of sector.
@@ -82,7 +108,7 @@ JSON:
     );
   } catch (e) {
     if (isQuotaError(e)) _apiAvailable = false;
-    return mockClassifyIdea(idea);
+    return getDemoFallback();
   }
 }
 
@@ -126,10 +152,10 @@ export async function generateClarifyingQuestions(
   if (!isApiOn()) return { questions: mockClarifyingQuestions(idea, ideaType) };
   try {
     return await gpt(
-      `You are MONK AI's discovery engine. Generate 5-7 targeted, conversational clarifying questions about the startup.
-Surface: target users, differentiators, business model, geography, timeline, funding status.
-DIRECT_BUILD → focus on uniqueness and features. PROBLEM_STATEMENT → focus on problem depth.
-All questions skippable. Respond with valid JSON only.`,
+      `You are MONK AI's discovery engine. Generate 5-7 HIGHLY SPECIFIC, deeply strategic clarifying questions about the startup.
+DO NOT ask generic questions like "Who is the target audience?", "How will you monetize?", or "What makes it unique?". 
+Instead, interrogate the specific technical hurdles, unique market dynamics, and highly specialized features relevant to "${idea}".
+Be highly creative and tailored to the exact industry. All questions skippable. Respond with valid JSON only.`,
       `Idea: "${idea}" | Type: ${ideaType} | Sector: ${sector}
 JSON:
 {
@@ -152,13 +178,20 @@ export async function buildStartupDocument(
   teams: TeamId[],
   modifications?: string
 ): Promise<{ document: StartupDocument }> {
-  if (!isApiOn()) return { document: mockStartupDocument(idea, ideaType, sector) };
+  const getDemoFallback = () => {
+    const doc = mockStartupDocument(idea, ideaType, sector);
+    doc.executiveSummary = `[SYSTEM ALERT: Offline Engine Active] ${doc.executiveSummary}`;
+    doc.suggestedLabel = `⚡ Demo: ${doc.suggestedLabel}`;
+    return { document: doc };
+  };
+
+  if (!isApiOn()) return getDemoFallback();
   const answersText = answers.map(a => `Q: ${a.question}\nA: ${a.skipped ? "[Skipped—AI decides]" : a.answer}`).join("\n\n");
   try {
     return await gpt(
       `You are MONK AI's startup document architect. Write comprehensive, investor-ready startup documents.
 ${modifications ? `User modifications requested: ${modifications}` : ""}
-Be specific. Include real market data. Be optimistic but realistic. Respond with valid JSON only.`,
+Be highly creative, specific, and inventive. DO NOT use generic startup templates. Introduce novel business models, aggressive growth loops, and wildly differentiated features. Respond with valid JSON only.`,
       `Build startup document:
 Idea: "${idea}" | Type: ${ideaType} | Sector: ${sector} | Teams: ${teams.join(", ")}
 
@@ -196,25 +229,25 @@ JSON schema:
     );
   } catch (e) {
     if (isQuotaError(e)) _apiAvailable = false;
-    return { document: mockStartupDocument(idea, ideaType, sector) };
+    return getDemoFallback();
   }
 }
 
 /* ── Team Worker Definitions ────────────────────────────── */
 
 export const TEAM_DEFINITIONS: Record<TeamId, { label: string; description: string; icon: string }> = {
-  PRODUCT:     { label: "Product Management", description: "PRD, user stories, feature specs, roadmap ownership",         icon: "📋" },
-  ENGINEERING: { label: "Engineering",         description: "Technical architecture, website code, APIs, infrastructure",  icon: "⚙️" },
-  DESIGN:      { label: "Design & UX",         description: "Design system, wireframes, UI specs, brand identity",        icon: "🎨" },
-  RESEARCH:    { label: "R&D",                 description: "Technology assessment, innovation scan, feasibility study",   icon: "🔬" },
-  MARKETING:   { label: "Marketing",           description: "Go-to-market strategy, brand voice, content strategy",       icon: "📣" },
-  LEGAL:       { label: "Legal & Policy",      description: "Regulatory compliance, legal structure, privacy policy",     icon: "⚖️" },
-  FINANCE:     { label: "Finance",             description: "Financial projections, revenue model, cost structure",       icon: "💰" },
-  SALES:       { label: "Sales & Growth",      description: "Sales strategy, ICP definition, growth playbook",            icon: "📈" },
-  COMPLIANCE:  { label: "Compliance",          description: "Industry regulations, certifications, risk management",      icon: "🛡️" },
-  QA:          { label: "QA & Verification",  description: "Quality assurance, testing strategy, acceptance criteria",   icon: "✅" },
-  OPERATIONS:  { label: "Operations",          description: "Process design, team structure, operational playbook",       icon: "🔄" },
-  SECURITY:    { label: "Security",            description: "Security architecture, threat modeling, data protection",    icon: "🔐" },
+  PRODUCT: { label: "Product Management", description: "PRD, user stories, feature specs, roadmap ownership", icon: "📋" },
+  ENGINEERING: { label: "Engineering", description: "Technical architecture, website code, APIs, infrastructure", icon: "⚙️" },
+  DESIGN: { label: "Design & UX", description: "Design system, wireframes, UI specs, brand identity", icon: "🎨" },
+  RESEARCH: { label: "R&D", description: "Technology assessment, innovation scan, feasibility study", icon: "🔬" },
+  MARKETING: { label: "Marketing", description: "Go-to-market strategy, brand voice, content strategy", icon: "📣" },
+  LEGAL: { label: "Legal & Policy", description: "Regulatory compliance, legal structure, privacy policy", icon: "⚖️" },
+  FINANCE: { label: "Finance", description: "Financial projections, revenue model, cost structure", icon: "💰" },
+  SALES: { label: "Sales & Growth", description: "Sales strategy, ICP definition, growth playbook", icon: "📈" },
+  COMPLIANCE: { label: "Compliance", description: "Industry regulations, certifications, risk management", icon: "🛡️" },
+  QA: { label: "QA & Verification", description: "Quality assurance, testing strategy, acceptance criteria", icon: "✅" },
+  OPERATIONS: { label: "Operations", description: "Process design, team structure, operational playbook", icon: "🔄" },
+  SECURITY: { label: "Security", description: "Security architecture, threat modeling, data protection", icon: "🔐" },
 };
 
 /* ── Per-Team Output Generators ──────────────────────────── */
@@ -250,8 +283,9 @@ Respond with JSON: { "trd": "full markdown" }`,
         2000
       ),
       gpt<{ code: string }>(
-        `You are a senior full-stack engineer. Write a complete working Next.js 14 TypeScript landing page.
-Sections: Hero, Features, Pricing, CTA, Footer. Use real content from the startup.
+        `You are a senior full-stack engineer and visionary UI designer. Write a complete working Next.js 14 TypeScript landing page using TailwindCSS.
+DO NOT just use the standard, boring Hero -> Features -> Pricing layout. Invent a unique, highly creative layout that perfectly matches the vibe of a ${doc.sector} startup.
+Use unique colors, sophisticated spacing, and novel sections (like interactive demos, live data feeds, or terminal windows).
 Respond with JSON: { "code": "complete Next.js page code" }`,
         `Startup: ${doc.suggestedLabel || "Startup"}\nSummary: ${doc.executiveSummary}\nUVP: ${doc.uniqueValueProposition}\nFeatures: ${doc.features.map(f => `${f.name}: ${f.description}`).join("\n")}`,
         3000
