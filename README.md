@@ -71,6 +71,10 @@ MONK AI abandons opaque, non-deterministic agent frameworks in favor of a strict
    ```env
    OPENAI_API_KEY=your_api_key_here
    ```
+   ```env
+   GEMINI_API_KEY=your_api_key_here
+   ```
+   -Use any one
 
 4. **Run the development server**:
    ```bash
