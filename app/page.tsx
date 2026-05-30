@@ -90,25 +90,21 @@ export default function Home() {
   const [drawerOutput, setDrawerOutput] = useState<{ title: string; content: string; type: string } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [apiKey, setApiKey] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load API keys from local storage
   useEffect(() => {
     const savedKey = localStorage.getItem("MONK_API_KEY");
-    const savedUrl = localStorage.getItem("MONK_BASE_URL");
     if (savedKey) setApiKey(savedKey);
-    if (savedUrl) setBaseUrl(savedUrl);
   }, []);
 
   async function saveSettings() {
     localStorage.setItem("MONK_API_KEY", apiKey);
-    localStorage.setItem("MONK_BASE_URL", baseUrl);
     try {
       await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey, baseUrl }),
+        body: JSON.stringify({ apiKey }),
       });
     } catch (e) {
       console.error("Failed to save settings to backend", e);
@@ -302,15 +298,6 @@ export default function Home() {
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-widest text-[#52525B] mb-1.5">OpenAI API Key</label>
                 <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-..." className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500/50 outline-none" />
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#52525B]">Base URL</label>
-                  <button onClick={() => setBaseUrl("http://localhost:3001/v1")} className="text-[9px] font-medium text-emerald-400 hover:text-emerald-300 hover:underline">
-                    Use AnythingLLM Default
-                  </button>
-                </div>
-                <input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://api.openai.com/v1" className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500/50 outline-none" />
               </div>
               <div className="flex items-center gap-3 pt-2">
                 <button onClick={saveSettings} className="flex-1 bg-white text-black text-xs font-bold py-2.5 rounded-lg hover:bg-emerald-50 transition-all">Save Changes</button>
