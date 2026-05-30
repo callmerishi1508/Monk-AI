@@ -91,7 +91,7 @@ export async function classifyIdea(idea: string): Promise<{
   if (!isApiOn()) return getDemoFallback();
   try {
     return await gpt(
-      `You are MONK AI's idea classification engine. Analyze startup ideas regardless of sector.
+      `You are MONK AI's elite idea classification engine with over 30+ years of professional work experience analyzing startup feasibility. Analyze startup ideas regardless of sector.
 Classify as PROBLEM_STATEMENT (user describes a problem to solve) or DIRECT_BUILD (user describes product to build).
 Sectors: FinTech, HealthTech, EdTech, AgriTech, DeepTech, Cybersecurity, E-Commerce, SaaS, Web3, Social, Gaming, PropTech, LegalTech, ClimaTech, BioTech, FoodTech, Logistics, Media, B2B, B2C, Consumer, Enterprise.
 Respond with valid JSON only.`,
@@ -122,21 +122,16 @@ export async function assembleTeam(idea: string, ideaType: IdeaType, sector: str
     const r = mockAssembleTeam(sector);
     return { teams: r.teams as any, summary: r.summary };
   }
-  const allTeams: TeamId[] = ["PRODUCT", "ENGINEERING", "DESIGN", "RESEARCH", "MARKETING", "LEGAL", "FINANCE", "SALES", "COMPLIANCE", "QA", "OPERATIONS", "SECURITY"];
   try {
-    return await gpt(
-      `You are MONK AI's team assembly engine. Select optimal departments for a startup.
-Available: ${allTeams.join(", ")}. Always include PRODUCT and ENGINEERING.
-Priority: CORE (always), EXTENDED (after core), OPTIONAL (if time allows).
-Respond with valid JSON only.`,
-      `Idea: "${idea}" | Type: ${ideaType} | Sector: ${sector}
-JSON:
-{
-  "teams": [{ "teamId": "...", "label": "...", "description": "...", "priority": "CORE"|"EXTENDED"|"OPTIONAL", "reason": "..." }],
-  "summary": "..."
-}`,
-      1500
+    const r = await gpt<{ teams: { teamId: TeamId; label: string; description: string; priority: "CORE" | "EXTENDED" | "OPTIONAL"; reason: string }[]; summary: string }>(
+      `You are an elite Chief Operating Officer with 30+ years of professional work experience building world-class startup teams.
+Select the exact 4 to 6 critical teams needed to build and launch this specific startup.
+Available teams: PRODUCT, ENGINEERING, DESIGN, RESEARCH, MARKETING, LEGAL, FINANCE, SALES, COMPLIANCE, QA, OPERATIONS, SECURITY.
+Always include PRODUCT and ENGINEERING.
+Return JSON: { "teams": [...], "summary": "..." }`,
+      `Idea: "${idea}" | Type: ${ideaType} | Sector: ${sector}`
     );
+    return r;
   } catch (e) {
     if (isQuotaError(e)) _apiAvailable = false;
     const r = mockAssembleTeam(sector);
@@ -151,17 +146,13 @@ export async function generateClarifyingQuestions(
 ): Promise<{ questions: ClarificationQuestion[] }> {
   if (!isApiOn()) return { questions: mockClarifyingQuestions(idea, ideaType) };
   try {
-    return await gpt(
-      `You are MONK AI's discovery engine. Generate 5-7 HIGHLY SPECIFIC, deeply strategic clarifying questions about the startup.
-DO NOT ask generic questions like "Who is the target audience?", "How will you monetize?", or "What makes it unique?". 
-Instead, interrogate the specific technical hurdles, unique market dynamics, and highly specialized features relevant to "${idea}".
-Be highly creative and tailored to the exact industry. All questions skippable. Respond with valid JSON only.`,
-      `Idea: "${idea}" | Type: ${ideaType} | Sector: ${sector}
-JSON:
-{
-  "questions": [{ "id": "q1", "question": "...", "context": "...", "examples": ["...", "..."], "skippable": true }]
-}`
+    const r = await gpt<{ questions: ClarificationQuestion[] }>(
+      `You are an elite Product Manager with 30+ years of professional work experience. The user submitted an idea: "${idea}".
+Generate 3 to 5 absolutely critical clarification questions needed before writing the PRD and architecture docs.
+Return JSON: { "questions": [ { "id": "q1", "question": "string", "context": "why it matters", "examples": ["ex1", "ex2"], "skippable": boolean } ] }`,
+      `Idea: "${idea}" | Type: ${ideaType} | Sector: ${sector}`
     );
+    return r;
   } catch (e) {
     if (isQuotaError(e)) _apiAvailable = false;
     return { questions: mockClarifyingQuestions(idea, ideaType) };
@@ -189,7 +180,8 @@ export async function buildStartupDocument(
   const answersText = answers.map(a => `Q: ${a.question}\nA: ${a.skipped ? "[Skipped—AI decides]" : a.answer}`).join("\n\n");
   try {
     return await gpt(
-      `You are MONK AI's startup document architect. Write comprehensive, investor-ready startup documents.
+      `You are an elite Founding CEO and Systems Architect with 30+ years of professional work experience successfully launching billion-dollar companies.
+Write comprehensive, investor-ready startup documents.
 ${modifications ? `User modifications requested: ${modifications}` : ""}
 Be highly creative, specific, and inventive. DO NOT use generic startup templates. Introduce novel business models, aggressive growth loops, and wildly differentiated features. Respond with valid JSON only.`,
       `Build startup document:
@@ -256,7 +248,7 @@ export async function runProductTeam(doc: StartupDocument): Promise<string> {
   if (!isApiOn()) return mockTeamOutput("PRODUCT", doc);
   try {
     const r = await gpt<{ prd: string }>(
-      `You are the Head of Product. Write an enterprise-grade PRD in clean markdown.
+      `You are an elite Head of Product with 30+ years of professional work experience. Write an enterprise-grade PRD in clean markdown.
 Respond with JSON: { "prd": "full markdown" }`,
       `PRD for:
 Summary: ${doc.executiveSummary}
@@ -277,13 +269,13 @@ export async function runEngineeringTeam(doc: StartupDocument): Promise<{ trd: s
   try {
     const [trdR, webR] = await Promise.all([
       gpt<{ trd: string }>(
-        `You are the CTO. Write a TRD in clean markdown with system architecture, API design, DB schema.
+        `You are an elite CTO with 30+ years of professional work experience. Write a TRD in clean markdown with system architecture, API design, DB schema.
 Respond with JSON: { "trd": "full markdown" }`,
         `TRD for: ${doc.executiveSummary}\nStack: ${JSON.stringify(doc.techStack)}`,
         2000
       ),
       gpt<{ code: string }>(
-        `You are a senior full-stack engineer and visionary UI designer. Write a complete working Next.js 14 TypeScript landing page using TailwindCSS.
+        `You are a legendary senior full-stack engineer and visionary UI designer with 30+ years of professional work experience. Write a complete working Next.js 14 TypeScript landing page using TailwindCSS.
 DO NOT just use the standard, boring Hero -> Features -> Pricing layout. Invent a unique, highly creative layout that perfectly matches the vibe of a ${doc.sector} startup.
 Use unique colors, sophisticated spacing, and novel sections (like interactive demos, live data feeds, or terminal windows).
 Respond with JSON: { "code": "complete Next.js page code" }`,
@@ -302,7 +294,7 @@ export async function runDesignTeam(doc: StartupDocument): Promise<string> {
   if (!isApiOn()) return mockTeamOutput("DESIGN", doc);
   try {
     const r = await gpt<{ designSystem: string }>(
-      `You are the Creative Director. Write a comprehensive design system in clean markdown (colors, typography, components, brand).
+      `You are an elite Creative Director with 30+ years of professional work experience. Write a comprehensive design system in clean markdown (colors, typography, components, brand).
 Respond with JSON: { "designSystem": "full markdown" }`,
       `Design for: ${doc.executiveSummary}\nSector: ${doc.sector}`,
       2000
@@ -318,7 +310,7 @@ export async function runResearchTeam(doc: StartupDocument): Promise<string> {
   if (!isApiOn()) return mockTeamOutput("RESEARCH", doc);
   try {
     const r = await gpt<{ report: string }>(
-      `You are the Chief Research Officer. Write an R&D and technology assessment report in clean markdown.
+      `You are an elite Chief Research Officer with 30+ years of professional work experience. Write an R&D and technology assessment report in clean markdown.
 Respond with JSON: { "report": "full markdown" }`,
       `Sector: ${doc.sector}\nSolution: ${doc.solution}\nStack: ${JSON.stringify(doc.techStack)}`,
       2000
@@ -334,7 +326,7 @@ export async function runMarketingTeam(doc: StartupDocument): Promise<string> {
   if (!isApiOn()) return mockTeamOutput("MARKETING", doc);
   try {
     const r = await gpt<{ strategy: string }>(
-      `You are the CMO. Write a complete go-to-market and marketing strategy in clean markdown.
+      `You are an elite CMO with 30+ years of professional work experience. Write a complete go-to-market and marketing strategy in clean markdown.
 Respond with JSON: { "strategy": "full markdown" }`,
       `Summary: ${doc.executiveSummary}\nUVP: ${doc.uniqueValueProposition}\nTarget: ${doc.targetMarket}`,
       2000
@@ -350,7 +342,7 @@ export async function runFinanceTeam(doc: StartupDocument): Promise<string> {
   if (!isApiOn()) return mockTeamOutput("FINANCE", doc);
   try {
     const r = await gpt<{ projections: string }>(
-      `You are the CFO. Write 12-month financial projections and business model in clean markdown with tables.
+      `You are an elite CFO with 30+ years of professional work experience. Write 12-month financial projections and business model in clean markdown with tables.
 Respond with JSON: { "projections": "full markdown" }`,
       `Summary: ${doc.executiveSummary}\nBudget: ${JSON.stringify(doc.budget)}\nTotal: ${doc.totalBudgetEstimate}`,
       2000
@@ -366,7 +358,7 @@ export async function runLegalTeam(doc: StartupDocument): Promise<string> {
   if (!isApiOn()) return mockTeamOutput("LEGAL", doc);
   try {
     const r = await gpt<{ legal: string }>(
-      `You are General Counsel. Write a legal compliance checklist in clean markdown.
+      `You are an elite General Counsel with 30+ years of professional work experience. Write a legal compliance checklist in clean markdown.
 Respond with JSON: { "legal": "full markdown" }`,
       `Summary: ${doc.executiveSummary}\nSector: ${doc.sector}\nRisks: ${JSON.stringify(doc.riskAssessment)}`,
       1500
@@ -382,7 +374,7 @@ export async function runSalesTeam(doc: StartupDocument): Promise<string> {
   if (!isApiOn()) return mockTeamOutput("SALES", doc);
   try {
     const r = await gpt<{ sales: string }>(
-      `You are VP of Sales. Write a sales strategy and growth playbook in clean markdown.
+      `You are an elite VP of Sales with 30+ years of professional work experience. Write a sales strategy and growth playbook in clean markdown.
 Respond with JSON: { "sales": "full markdown" }`,
       `Summary: ${doc.executiveSummary}\nUVP: ${doc.uniqueValueProposition}\nPersonas: ${JSON.stringify(doc.userPersonas)}`,
       1500
@@ -399,7 +391,7 @@ export async function runGenericTeam(teamId: TeamId, doc: StartupDocument): Prom
   const def = TEAM_DEFINITIONS[teamId];
   try {
     const r = await gpt<{ output: string }>(
-      `You are head of ${def.label}. Role: ${def.description}. Write a comprehensive deliverable in clean markdown.
+      `You are an elite head of ${def.label} with 30+ years of professional work experience. Role: ${def.description}. Write a comprehensive deliverable in clean markdown.
 Respond with JSON: { "output": "full markdown" }`,
       `Context: ${doc.executiveSummary}\nSector: ${doc.sector}\nSolution: ${doc.solution}`,
       1500
