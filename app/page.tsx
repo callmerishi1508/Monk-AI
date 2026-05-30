@@ -106,6 +106,25 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ apiKey }),
       });
+      
+      // If we are currently looking at a mock session, seamlessly regenerate it with the real API!
+      if (session && session.sessionLabel.includes("Demo Mode")) {
+        const currentIdea = session.idea;
+        setSession(null); // Show loading state
+        
+        // Trigger a completely fresh session using the newly saved API credentials
+        const res = await fetch("/api/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idea: currentIdea }),
+        });
+        
+        if (res.ok) {
+          const d = await res.json();
+          setSession(d.session);
+          await loadSessions();
+        }
+      }
     } catch (e) {
       console.error("Failed to save settings to backend", e);
     }
