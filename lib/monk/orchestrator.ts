@@ -126,9 +126,12 @@ async function proposeTeams(sessionId: string): Promise<void> {
 
     const { teams, summary } = await assembleTeam(session.idea, session.ideaType, session.sector || "General");
 
-    session.proposedTeams = teams.map(t =>
-      buildTeamWorker(t.teamId, t.reason, t.label, t.description)
-    );
+    session.proposedTeams = teams.map(t => {
+      // Sanitize AI hallucinations (e.g. missing teamId or lowercase)
+      const rawId = t.teamId || (t as any).id || (t as any).name || "UNKNOWN";
+      const teamId = String(rawId).toUpperCase().replace(/\s+/g, "_") as TeamId;
+      return buildTeamWorker(teamId, t.reason || "", t.label || teamId, t.description || "");
+    });
 
     addEvent(session, "TEAM_PROPOSED", `${teams.length} departments proposed: ${teams.map(t => t.label).join(", ")}`);
     session.updatedAt = now();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight, BrainCircuit, CheckCircle2, ChevronDown, ChevronRight,
   Code2, DollarSign, Download, FileText, Layers, Loader2, Maximize2,
@@ -8,7 +8,7 @@ import {
   Scale, Search, Settings, Shield, Sparkles, Star, Target, TrendingUp,
   Users, X, Zap, Building2, Activity, GitBranch, Eye, BarChart3,
   Globe, Package, FlaskConical, Briefcase, Clock, AlertTriangle,
-  CheckSquare, Edit3, Trash2, Copy, ExternalLink, ArrowLeft,
+  CheckSquare, Edit3, Trash2, Copy, ExternalLink, ArrowLeft, Rocket, Database,
 } from "lucide-react";
 import type { MonkSession, TeamId, TeamWorker, ClarificationQuestion, StartupDocument } from "@/lib/monk/types";
 
@@ -28,46 +28,46 @@ const EXAMPLE_PROMPTS = [
 ];
 
 const STAGES = [
-  { id: "IDEA_INTAKE",        label: "Idea Analysis",      icon: <Sparkles size={13} /> },
-  { id: "TEAM_ASSEMBLY",      label: "Team Assembly",      icon: <Users size={13} /> },
-  { id: "CLARIFICATION",      label: "Discovery Q&A",      icon: <MessageSquare size={13} /> },
-  { id: "DOCUMENT_DRAFT",     label: "Building Document",  icon: <FileText size={13} /> },
-  { id: "DOCUMENT_REVIEW",    label: "Human Review",       icon: <Eye size={13} /> },
-  { id: "TEAM_DISPATCH",      label: "Team Dispatch",      icon: <Zap size={13} /> },
-  { id: "PARALLEL_EXECUTION", label: "Teams Working",      icon: <Activity size={13} /> },
-  { id: "CROSS_FUNCTIONAL",   label: "Cross-Team Sync",    icon: <GitBranch size={13} /> },
-  { id: "OUTPUT_COLLECTION",  label: "Assembling Outputs", icon: <Package size={13} /> },
-  { id: "COMPLETE",           label: "Complete",           icon: <CheckCircle2 size={13} /> },
+  { id: "IDEA_INTAKE", label: "Idea Analysis", icon: <Sparkles size={13} /> },
+  { id: "TEAM_ASSEMBLY", label: "Team Assembly", icon: <Users size={13} /> },
+  { id: "CLARIFICATION", label: "Discovery Q&A", icon: <MessageSquare size={13} /> },
+  { id: "DOCUMENT_DRAFT", label: "Building Document", icon: <FileText size={13} /> },
+  { id: "DOCUMENT_REVIEW", label: "Human Review", icon: <Eye size={13} /> },
+  { id: "TEAM_DISPATCH", label: "Team Dispatch", icon: <Zap size={13} /> },
+  { id: "PARALLEL_EXECUTION", label: "Teams Working", icon: <Activity size={13} /> },
+  { id: "CROSS_FUNCTIONAL", label: "Cross-Team Sync", icon: <GitBranch size={13} /> },
+  { id: "OUTPUT_COLLECTION", label: "Assembling Outputs", icon: <Package size={13} /> },
+  { id: "COMPLETE", label: "Complete", icon: <CheckCircle2 size={13} /> },
 ];
 
 const TEAM_ICONS: Record<TeamId, React.ReactNode> = {
-  PRODUCT:     <FileText size={18} />,
+  PRODUCT: <FileText size={18} />,
   ENGINEERING: <Code2 size={18} />,
-  DESIGN:      <PenTool size={18} />,
-  RESEARCH:    <Microscope size={18} />,
-  MARKETING:   <Megaphone size={18} />,
-  LEGAL:       <Scale size={18} />,
-  FINANCE:     <DollarSign size={18} />,
-  SALES:       <TrendingUp size={18} />,
-  COMPLIANCE:  <Shield size={18} />,
-  QA:          <CheckCircle2 size={18} />,
-  OPERATIONS:  <Settings size={18} />,
-  SECURITY:    <Shield size={18} />,
+  DESIGN: <PenTool size={18} />,
+  RESEARCH: <Microscope size={18} />,
+  MARKETING: <Megaphone size={18} />,
+  LEGAL: <Scale size={18} />,
+  FINANCE: <DollarSign size={18} />,
+  SALES: <TrendingUp size={18} />,
+  COMPLIANCE: <Shield size={18} />,
+  QA: <CheckCircle2 size={18} />,
+  OPERATIONS: <Settings size={18} />,
+  SECURITY: <Shield size={18} />,
 };
 
 const TEAM_COLORS: Record<TeamId, { border: string; bg: string; text: string; glow: string }> = {
-  PRODUCT:     { border: "border-cyan-500/30",    bg: "bg-cyan-500/10",    text: "text-cyan-300",    glow: "shadow-[0_0_20px_rgba(6,182,212,0.15)]" },
+  PRODUCT: { border: "border-cyan-500/30", bg: "bg-cyan-500/10", text: "text-cyan-300", glow: "shadow-[0_0_20px_rgba(6,182,212,0.15)]" },
   ENGINEERING: { border: "border-emerald-500/30", bg: "bg-emerald-500/10", text: "text-emerald-300", glow: "shadow-[0_0_20px_rgba(16,185,129,0.15)]" },
-  DESIGN:      { border: "border-violet-500/30",  bg: "bg-violet-500/10",  text: "text-violet-300",  glow: "shadow-[0_0_20px_rgba(139,92,246,0.15)]" },
-  RESEARCH:    { border: "border-purple-500/30",  bg: "bg-purple-500/10",  text: "text-purple-300",  glow: "shadow-[0_0_20px_rgba(168,85,247,0.15)]" },
-  MARKETING:   { border: "border-pink-500/30",    bg: "bg-pink-500/10",    text: "text-pink-300",    glow: "shadow-[0_0_20px_rgba(236,72,153,0.15)]" },
-  LEGAL:       { border: "border-amber-500/30",   bg: "bg-amber-500/10",   text: "text-amber-300",   glow: "shadow-[0_0_20px_rgba(245,158,11,0.15)]" },
-  FINANCE:     { border: "border-yellow-500/30",  bg: "bg-yellow-500/10",  text: "text-yellow-300",  glow: "shadow-[0_0_20px_rgba(234,179,8,0.15)]" },
-  SALES:       { border: "border-orange-500/30",  bg: "bg-orange-500/10",  text: "text-orange-300",  glow: "shadow-[0_0_20px_rgba(249,115,22,0.15)]" },
-  COMPLIANCE:  { border: "border-red-500/30",     bg: "bg-red-500/10",     text: "text-red-300",     glow: "shadow-[0_0_20px_rgba(239,68,68,0.15)]" },
-  QA:          { border: "border-teal-500/30",    bg: "bg-teal-500/10",    text: "text-teal-300",    glow: "shadow-[0_0_20px_rgba(20,184,166,0.15)]" },
-  OPERATIONS:  { border: "border-blue-500/30",    bg: "bg-blue-500/10",    text: "text-blue-300",    glow: "shadow-[0_0_20px_rgba(59,130,246,0.15)]" },
-  SECURITY:    { border: "border-rose-500/30",    bg: "bg-rose-500/10",    text: "text-rose-300",    glow: "shadow-[0_0_20px_rgba(244,63,94,0.15)]" },
+  DESIGN: { border: "border-violet-500/30", bg: "bg-violet-500/10", text: "text-violet-300", glow: "shadow-[0_0_20px_rgba(139,92,246,0.15)]" },
+  RESEARCH: { border: "border-purple-500/30", bg: "bg-purple-500/10", text: "text-purple-300", glow: "shadow-[0_0_20px_rgba(168,85,247,0.15)]" },
+  MARKETING: { border: "border-pink-500/30", bg: "bg-pink-500/10", text: "text-pink-300", glow: "shadow-[0_0_20px_rgba(236,72,153,0.15)]" },
+  LEGAL: { border: "border-amber-500/30", bg: "bg-amber-500/10", text: "text-amber-300", glow: "shadow-[0_0_20px_rgba(245,158,11,0.15)]" },
+  FINANCE: { border: "border-yellow-500/30", bg: "bg-yellow-500/10", text: "text-yellow-300", glow: "shadow-[0_0_20px_rgba(234,179,8,0.15)]" },
+  SALES: { border: "border-orange-500/30", bg: "bg-orange-500/10", text: "text-orange-300", glow: "shadow-[0_0_20px_rgba(249,115,22,0.15)]" },
+  COMPLIANCE: { border: "border-red-500/30", bg: "bg-red-500/10", text: "text-red-300", glow: "shadow-[0_0_20px_rgba(239,68,68,0.15)]" },
+  QA: { border: "border-teal-500/30", bg: "bg-teal-500/10", text: "text-teal-300", glow: "shadow-[0_0_20px_rgba(20,184,166,0.15)]" },
+  OPERATIONS: { border: "border-blue-500/30", bg: "bg-blue-500/10", text: "text-blue-300", glow: "shadow-[0_0_20px_rgba(59,130,246,0.15)]" },
+  SECURITY: { border: "border-rose-500/30", bg: "bg-rose-500/10", text: "text-rose-300", glow: "shadow-[0_0_20px_rgba(244,63,94,0.15)]" },
 };
 
 const ACTIVE_STAGES = new Set([
@@ -89,36 +89,41 @@ export default function Home() {
   const [activeOutputTab, setActiveOutputTab] = useState<string | null>(null);
   const [drawerOutput, setDrawerOutput] = useState<{ title: string; content: string; type: string } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showRoadmap, setShowRoadmap] = useState(false);
   const [apiKey, setApiKey] = useState("");
+  const [geminiKey, setGeminiKey] = useState("");
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load API keys from local storage
   useEffect(() => {
     const savedKey = localStorage.getItem("MONK_API_KEY");
     if (savedKey) setApiKey(savedKey);
+    const savedGemini = localStorage.getItem("MONK_GEMINI_KEY");
+    if (savedGemini) setGeminiKey(savedGemini);
   }, []);
 
   async function saveSettings() {
     localStorage.setItem("MONK_API_KEY", apiKey);
+    localStorage.setItem("MONK_GEMINI_KEY", geminiKey);
     try {
       await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey }),
+        body: JSON.stringify({ apiKey, geminiKey }),
       });
-      
+
       // If we are currently looking at a mock session, seamlessly regenerate it with the real API!
       if (session && session.sessionLabel.includes("Demo Mode")) {
         const currentIdea = session.idea;
         setSession(null); // Show loading state
-        
+
         // Trigger a completely fresh session using the newly saved API credentials
         const res = await fetch("/api/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ idea: currentIdea }),
         });
-        
+
         if (res.ok) {
           const d = await res.json();
           setSession(d.session);
@@ -159,14 +164,14 @@ export default function Home() {
     try {
       const res = await fetch("/api/sessions", { cache: "no-store" });
       if (res.ok) { const d = await res.json(); setSessions(d.sessions || []); }
-    } catch {}
+    } catch { }
   }
 
   async function pollSession(id: string) {
     try {
       const res = await fetch(`/api/sessions/${id}`, { cache: "no-store" });
       if (res.ok) { const d = await res.json(); setSession(d.session); }
-    } catch {}
+    } catch { }
   }
 
   async function createSession() {
@@ -184,7 +189,7 @@ export default function Home() {
         setIdeaInput("");
         await loadSessions();
       }
-    } catch {} finally { setIsCreating(false); }
+    } catch { } finally { setIsCreating(false); }
   }
 
   async function approveTeams(teamIds: TeamId[]) {
@@ -196,7 +201,7 @@ export default function Home() {
         body: JSON.stringify({ teams: teamIds }),
       });
       if (res.ok) { const d = await res.json(); if (d.session) setSession(d.session); }
-    } catch {}
+    } catch { }
   }
 
   async function answerQuestion(questionId: string, answer: string | null, skipped = false) {
@@ -208,7 +213,7 @@ export default function Home() {
         body: JSON.stringify({ questionId, answer, skipped }),
       });
       if (res.ok) { const d = await res.json(); if (d.session) setSession(d.session); }
-    } catch {}
+    } catch { }
   }
 
   async function skipAllQuestions() {
@@ -220,7 +225,7 @@ export default function Home() {
         body: JSON.stringify({ skipAll: true }),
       });
       if (res.ok) { const d = await res.json(); if (d.session) setSession(d.session); }
-    } catch {}
+    } catch { }
   }
 
   async function reviewDocument(action: "APPROVE" | "MODIFY" | "REFRAME", modifications?: string) {
@@ -232,7 +237,7 @@ export default function Home() {
         body: JSON.stringify({ action, modifications }),
       });
       if (res.ok) { const d = await res.json(); if (d.session) setSession(d.session); }
-    } catch {}
+    } catch { }
   }
 
   function downloadOutput(output: MonkSession["teamOutputs"][0]) {
@@ -318,10 +323,62 @@ export default function Home() {
                 <label className="block text-[10px] font-bold uppercase tracking-widest text-[#52525B] mb-1.5">OpenAI API Key</label>
                 <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-..." className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500/50 outline-none" />
               </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-[#52525B] mb-1.5">Gemini API Key (Backup / Alternative)</label>
+                <input type="password" value={geminiKey} onChange={e => setGeminiKey(e.target.value)} placeholder="AIza..." className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:border-violet-500/50 outline-none" />
+              </div>
               <div className="flex items-center gap-3 pt-2">
                 <button onClick={saveSettings} className="flex-1 bg-white text-black text-xs font-bold py-2.5 rounded-lg hover:bg-emerald-50 transition-all">Save Changes</button>
                 <button onClick={() => setShowSettings(false)} className="px-4 py-2.5 rounded-lg border border-white/[0.08] text-xs font-bold text-[#71717A] hover:text-white transition-all">Cancel</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* V2 Roadmap Modal */}
+      {showRoadmap && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowRoadmap(false)} />
+          <div className="relative w-full max-w-2xl bg-[#050508] border border-white/[0.08] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="p-6 border-b border-white/[0.05] bg-gradient-to-r from-violet-500/10 to-transparent">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="h-10 w-10 rounded-xl bg-violet-500/20 border border-violet-500/30 flex items-center justify-center shadow-[0_0_20px_rgba(139,92,246,0.2)]">
+                  <Rocket size={20} className="text-violet-400" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white tracking-wide">MONK AI: V2 Architecture Roadmap</h2>
+                  <p className="text-xs text-violet-300 uppercase tracking-widest font-mono">Future Vision & Architecture Plan</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-3"><Database size={16} className="text-emerald-400" /> 1. Targeted RAG Integration</h3>
+                <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-4 text-sm text-[#A1A1AA] leading-relaxed">
+                  <p className="mb-3">While RAG is fatal to the <strong>creative process</strong> (limiting idea generation and PRD vision), it is essential for our factual agents.</p>
+                  <ul className="space-y-2">
+                    <li><strong className="text-white">Legal Team:</strong> Will be connected to a real-time compliance Vector DB (SEC, FDA, GDPR) to ensure architectural suggestions are immediately legally compliant.</li>
+                    <li><strong className="text-white">Finance Team:</strong> Will query real-time market data to produce highly accurate 12-month projections based on live SaaS valuations.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-3"><GitBranch size={16} className="text-blue-400" /> 2. LangGraph Engineering Loops</h3>
+                <div className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-4 text-sm text-[#A1A1AA] leading-relaxed">
+                  <p className="mb-3">We are transitioning our linear pipeline into a cyclical <strong>LangGraph State Machine</strong> exclusively for technical execution.</p>
+                  <ul className="space-y-2">
+                    <li><strong className="text-white">Self-Correcting Code:</strong> The Engineering Agent writes the Next.js app, then passes it to the QA Agent. If it fails standard testing (via AST or Playwright), LangGraph automatically routes it back to Engineering for a rewrite.</li>
+                    <li><strong className="text-white">Why not everywhere?</strong> Overusing LangGraph creates massive latency and token consumption. We deploy it strictly where iterative refinement is mathematically provable (Code & Testing).</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-white/[0.05] flex justify-end bg-black/20">
+              <button onClick={() => setShowRoadmap(false)} className="px-5 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-sm font-bold text-white transition-all">Close Vision</button>
             </div>
           </div>
         </div>
@@ -353,9 +410,8 @@ export default function Home() {
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className="text-[8px] font-mono text-[#3F3F46] uppercase tracking-widest">{session.sector}</span>
                     {session.ideaType && (
-                      <span className={`text-[7px] font-bold uppercase tracking-widest rounded-full px-1.5 py-0.5 ${
-                        session.ideaType === "PROBLEM_STATEMENT" ? "bg-violet-500/10 text-violet-400 border border-violet-500/20" : "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
-                      }`}>{session.ideaType === "PROBLEM_STATEMENT" ? "Problem Statement" : "Direct Build"}</span>
+                      <span className={`text-[7px] font-bold uppercase tracking-widest rounded-full px-1.5 py-0.5 ${session.ideaType === "PROBLEM_STATEMENT" ? "bg-violet-500/10 text-violet-400 border border-violet-500/20" : "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
+                        }`}>{session.ideaType === "PROBLEM_STATEMENT" ? "Problem Statement" : "Direct Build"}</span>
                     )}
                   </div>
                 </div>
@@ -375,6 +431,9 @@ export default function Home() {
             </div>
 
             <div className="flex items-center gap-3">
+              <button onClick={() => setShowRoadmap(true)} className="flex items-center gap-2 rounded-lg border border-violet-500/20 bg-violet-500/10 px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-violet-300 hover:bg-violet-500/20 hover:text-violet-200 transition-all shadow-[0_0_10px_rgba(139,92,246,0.1)]">
+                <Rocket size={14} /> V2 Vision
+              </button>
               <button onClick={() => setShowSettings(true)} className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-1.5 text-xs text-[#A1A1AA] hover:text-white hover:bg-white/[0.05] transition-all">
                 <Settings size={14} /> Settings
               </button>
@@ -406,15 +465,13 @@ export default function Home() {
               const isDone = stageIndex > i && !isCurrent;
               const isWaiting = stageIndex < i;
               return (
-                <div key={s.id} className={`relative flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-all ${
-                  isCurrent ? "bg-emerald-500/8 border border-emerald-500/20" :
+                <div key={s.id} className={`relative flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-all ${isCurrent ? "bg-emerald-500/8 border border-emerald-500/20" :
                   isDone ? "opacity-60" : "opacity-25"
-                }`}>
-                  {i < STAGES.length - 1 && <div className="absolute left-[21px] top-10 h-3 w-px bg-white/[0.06]" />}
-                  <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-all ${
-                    isCurrent ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.2)]" :
-                    isDone ? "border-emerald-500/20 bg-emerald-500/8 text-emerald-500" : "border-white/[0.06] bg-white/[0.02] text-[#3F3F46]"
                   }`}>
+                  {i < STAGES.length - 1 && <div className="absolute left-[21px] top-10 h-3 w-px bg-white/[0.06]" />}
+                  <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-all ${isCurrent ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.2)]" :
+                    isDone ? "border-emerald-500/20 bg-emerald-500/8 text-emerald-500" : "border-white/[0.06] bg-white/[0.02] text-[#3F3F46]"
+                    }`}>
                     {isDone ? <CheckCircle2 size={10} /> : isCurrent ? <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> : s.icon}
                   </div>
                   <span className={`text-[10px] font-semibold ${isCurrent ? "text-white" : isDone ? "text-[#71717A]" : "text-[#3F3F46]"}`}>{s.label}</span>
@@ -497,7 +554,7 @@ function LandingPage({
     }
   }
 
-  const SECTORS = ["FinTech","HealthTech","EdTech","AgriTech","CyberSecurity","E-Commerce","SaaS","Web3","DeepTech","PropTech","LegalTech","ClimaTech","Gaming","Logistics","B2B SaaS","Consumer","Trading","Social","Media","BioTech"];
+  const SECTORS = ["FinTech", "HealthTech", "EdTech", "AgriTech", "CyberSecurity", "E-Commerce", "SaaS", "Web3", "DeepTech", "PropTech", "LegalTech", "ClimaTech", "Gaming", "Logistics", "B2B SaaS", "Consumer", "Trading", "Social", "Media", "BioTech"];
 
   return (
     <div className="min-h-screen bg-[#050508] text-white relative overflow-hidden">
@@ -620,10 +677,9 @@ function LandingPage({
                 className="w-full rounded-xl border border-white/[0.05] bg-white/[0.02] p-3.5 text-left hover:bg-white/[0.05] hover:border-white/[0.09] transition-all group">
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-[11px] font-semibold text-white group-hover:text-emerald-300 transition-colors leading-tight">{s.sessionLabel}</span>
-                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-widest ${
-                    s.stage === "COMPLETE" ? "bg-emerald-500/15 text-emerald-400" :
+                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-widest ${s.stage === "COMPLETE" ? "bg-emerald-500/15 text-emerald-400" :
                     s.stage === "FAILED" ? "bg-red-500/15 text-red-400" : "bg-blue-500/15 text-blue-400"
-                  }`}>{s.stage}</span>
+                    }`}>{s.stage}</span>
                 </div>
                 <p className="mt-1.5 text-[9px] text-[#3F3F46] leading-relaxed line-clamp-2">{s.idea}</p>
                 <p className="mt-1.5 text-[8px] text-[#2F2F3A] font-mono">{new Date(s.createdAt).toLocaleString()}</p>
@@ -723,16 +779,15 @@ function TeamAssemblyStage({ session, onApprove }: { session: MonkSession; onApp
         subtitle={`MONK AI recommends ${proposed.length} departments. You can modify before proceeding.`} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {proposed.map(team => {
-          const colors = TEAM_COLORS[team.teamId];
+        {proposed.map((team, idx) => {
+          const colors = TEAM_COLORS[team.teamId] || { border: "border-gray-500/30", bg: "bg-gray-500/10", text: "text-gray-300", glow: "shadow-[0_0_20px_rgba(156,163,175,0.15)]" };
           const isSel = selected.has(team.teamId);
           return (
-            <button key={team.teamId} onClick={() => toggle(team.teamId)}
-              className={`flex items-start gap-3.5 rounded-2xl border p-4 text-left transition-all group ${
-                isSel ? `${colors.border} ${colors.bg} ${colors.glow}` : "border-white/[0.04] bg-white/[0.01] opacity-50"
-              }`}>
+            <button key={`${team.teamId}-${idx}`} onClick={() => toggle(team.teamId)}
+              className={`flex items-start gap-3.5 rounded-2xl border p-4 text-left transition-all group ${isSel ? `${colors.border} ${colors.bg} ${colors.glow}` : "border-white/[0.04] bg-white/[0.01] opacity-50"
+                }`}>
               <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${isSel ? `${colors.border} ${colors.bg} ${colors.text}` : "border-white/[0.06] text-[#3F3F46]"}`}>
-                {TEAM_ICONS[team.teamId]}
+                {TEAM_ICONS[team.teamId] || <Users size={18} />}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
@@ -1010,28 +1065,26 @@ function ParallelExecutionStage({ session }: { session: MonkSession }) {
 
       {/* Team grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-        {teams.map(team => {
-          const colors = TEAM_COLORS[team.teamId];
+        {teams.map((team, idx) => {
+          const colors = TEAM_COLORS[team.teamId] || { border: "border-gray-500/30", bg: "bg-gray-500/10", text: "text-gray-300", glow: "shadow-none" };
           const isDone = team.status === "DONE";
           const isActive = team.status === "ACTIVE" || team.status === "REVIEWING";
           const isBlocked = team.status === "BLOCKED";
 
           return (
-            <div key={team.teamId} className={`rounded-2xl border p-4 transition-all ${
-              isDone ? `${colors.border} ${colors.bg}` :
+            <div key={`${team.teamId}-${idx}`} className={`rounded-2xl border p-4 transition-all ${isDone ? `${colors.border} ${colors.bg}` :
               isActive ? "border-white/[0.07] bg-white/[0.02]" :
-              isBlocked ? "border-red-500/20 bg-red-500/[0.03]" :
-              "border-white/[0.04] bg-white/[0.01] opacity-50"
-            }`}>
+                isBlocked ? "border-red-500/20 bg-red-500/[0.03]" :
+                  "border-white/[0.04] bg-white/[0.01] opacity-50"
+              }`}>
               <div className="flex items-center gap-3 mb-3">
                 <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${isDone ? `${colors.border} ${colors.bg} ${colors.text}` : "border-white/[0.06] text-[#3F3F46]"}`}>
-                  {TEAM_ICONS[team.teamId]}
+                  {TEAM_ICONS[team.teamId] || <Users size={18} />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-[11px] font-bold text-white">{team.label}</p>
-                  <p className={`text-[9px] font-bold uppercase tracking-wider mt-0.5 ${
-                    isDone ? colors.text : isActive ? "text-blue-400" : isBlocked ? "text-red-400" : "text-[#3F3F46]"
-                  }`}>{team.status}</p>
+                  <p className={`text-[9px] font-bold uppercase tracking-wider mt-0.5 ${isDone ? colors.text : isActive ? "text-blue-400" : isBlocked ? "text-red-400" : "text-[#3F3F46]"
+                    }`}>{team.status}</p>
                 </div>
                 {isActive && <Loader2 size={13} className="text-blue-400 animate-spin shrink-0" />}
                 {isDone && <CheckCircle2 size={13} className={`${colors.text} shrink-0`} />}
@@ -1089,18 +1142,18 @@ function CompleteStage({
   const outputs = session.teamOutputs;
 
   const OUTPUT_LABELS: Record<string, { icon: React.ReactNode; color: string }> = {
-    PRD:                  { icon: <FileText size={16} />,    color: "text-cyan-400" },
-    TRD:                  { icon: <Code2 size={16} />,       color: "text-emerald-400" },
-    WEBSITE_CODE:         { icon: <Globe size={16} />,       color: "text-emerald-400" },
-    DESIGN_SYSTEM:        { icon: <PenTool size={16} />,     color: "text-violet-400" },
-    COMPETITOR_ANALYSIS:  { icon: <BarChart3 size={16} />,   color: "text-fuchsia-400" },
-    MARKET_GUIDE:         { icon: <TrendingUp size={16} />,  color: "text-amber-400" },
-    FINANCIAL_PROJECTIONS:{ icon: <DollarSign size={16} />,  color: "text-yellow-400" },
-    LEGAL_CHECKLIST:      { icon: <Scale size={16} />,       color: "text-amber-400" },
-    RD_REPORT:            { icon: <Microscope size={16} />,  color: "text-purple-400" },
-    GTM_STRATEGY:         { icon: <Megaphone size={16} />,   color: "text-pink-400" },
-    USER_PERSONAS:        { icon: <Users size={16} />,       color: "text-blue-400" },
-    STARTUP_DOCUMENT:     { icon: <FileText size={16} />,    color: "text-white" },
+    PRD: { icon: <FileText size={16} />, color: "text-cyan-400" },
+    TRD: { icon: <Code2 size={16} />, color: "text-emerald-400" },
+    WEBSITE_CODE: { icon: <Globe size={16} />, color: "text-emerald-400" },
+    DESIGN_SYSTEM: { icon: <PenTool size={16} />, color: "text-violet-400" },
+    COMPETITOR_ANALYSIS: { icon: <BarChart3 size={16} />, color: "text-fuchsia-400" },
+    MARKET_GUIDE: { icon: <TrendingUp size={16} />, color: "text-amber-400" },
+    FINANCIAL_PROJECTIONS: { icon: <DollarSign size={16} />, color: "text-yellow-400" },
+    LEGAL_CHECKLIST: { icon: <Scale size={16} />, color: "text-amber-400" },
+    RD_REPORT: { icon: <Microscope size={16} />, color: "text-purple-400" },
+    GTM_STRATEGY: { icon: <Megaphone size={16} />, color: "text-pink-400" },
+    USER_PERSONAS: { icon: <Users size={16} />, color: "text-blue-400" },
+    STARTUP_DOCUMENT: { icon: <FileText size={16} />, color: "text-white" },
   };
 
   function downloadAll() {
@@ -1164,9 +1217,9 @@ function CompleteStage({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {outputs.map((output, i) => {
             const meta = OUTPUT_LABELS[output.outputType] || { icon: <FileText size={16} />, color: "text-white" };
-            const colors = TEAM_COLORS[output.teamId];
+            const colors = TEAM_COLORS[output.teamId] || { border: "border-gray-500/30", bg: "bg-gray-500/10", text: "text-gray-300", glow: "shadow-none" };
             return (
-              <div key={`${output.teamId}-${i}`} className={`rounded-2xl border ${colors.border} ${colors.bg} p-4`}>
+              <div key={`${output.teamId || 'unknown'}-${i}`} className={`rounded-2xl border ${colors.border} ${colors.bg} p-4`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
                     <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${colors.border} ${colors.bg} ${meta.color}`}>
@@ -1221,67 +1274,77 @@ function DocumentViewer({ doc }: { doc: StartupDocument }) {
   const [expandedSection, setExpandedSection] = useState<string | null>("executiveSummary");
 
   const sections = [
-    { key: "executiveSummary",   label: "Executive Summary",         content: <p className="text-[13px] text-[#A1A1AA] leading-relaxed">{doc.executiveSummary}</p> },
+    { key: "executiveSummary", label: "Executive Summary", content: <p className="text-[13px] text-[#A1A1AA] leading-relaxed">{doc.executiveSummary}</p> },
     ...(doc.problemStatement ? [{ key: "problemStatement", label: "Problem Statement", content: <p className="text-[13px] text-[#A1A1AA] leading-relaxed">{doc.problemStatement}</p> }] : []),
-    { key: "solution",           label: "Solution",                  content: <p className="text-[13px] text-[#A1A1AA] leading-relaxed">{doc.solution}</p> },
-    { key: "visionMission",      label: "Vision & Mission",          content: <><p className="text-[13px] text-white font-semibold mb-1">Vision</p><p className="text-[13px] text-[#A1A1AA] leading-relaxed mb-3">{doc.vision}</p><p className="text-[13px] text-white font-semibold mb-1">Mission</p><p className="text-[13px] text-[#A1A1AA] leading-relaxed">{doc.mission}</p></> },
-    { key: "uvp",                label: "Unique Value Proposition",  content: <p className="text-[13px] text-emerald-300 leading-relaxed font-semibold">{doc.uniqueValueProposition}</p> },
-    { key: "features",           label: `Features (${doc.features.length})`, content: (
-      <div className="space-y-3">
-        {doc.features.map((f, i) => (
-          <div key={i} className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01]">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[11px] font-bold text-white">{f.name}</span>
-              <span className={`rounded-full px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-widest ${f.priority === "MUST_HAVE" ? "bg-emerald-500/10 text-emerald-400" : f.priority === "SHOULD_HAVE" ? "bg-amber-500/10 text-amber-400" : "bg-white/5 text-[#71717A]"}`}>{f.priority.replace("_", " ")}</span>
+    { key: "solution", label: "Solution", content: <p className="text-[13px] text-[#A1A1AA] leading-relaxed">{doc.solution}</p> },
+    { key: "visionMission", label: "Vision & Mission", content: <><p className="text-[13px] text-white font-semibold mb-1">Vision</p><p className="text-[13px] text-[#A1A1AA] leading-relaxed mb-3">{doc.vision}</p><p className="text-[13px] text-white font-semibold mb-1">Mission</p><p className="text-[13px] text-[#A1A1AA] leading-relaxed">{doc.mission}</p></> },
+    { key: "uvp", label: "Unique Value Proposition", content: <p className="text-[13px] text-emerald-300 leading-relaxed font-semibold">{doc.uniqueValueProposition}</p> },
+    {
+      key: "features", label: `Features (${doc.features.length})`, content: (
+        <div className="space-y-3">
+          {doc.features.map((f, i) => (
+            <div key={i} className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01]">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[11px] font-bold text-white">{f.name}</span>
+                <span className={`rounded-full px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-widest ${f.priority === "MUST_HAVE" ? "bg-emerald-500/10 text-emerald-400" : f.priority === "SHOULD_HAVE" ? "bg-amber-500/10 text-amber-400" : "bg-white/5 text-[#71717A]"}`}>{f.priority.replace("_", " ")}</span>
+              </div>
+              <p className="text-[11px] text-[#71717A] leading-relaxed">{f.description}</p>
             </div>
-            <p className="text-[11px] text-[#71717A] leading-relaxed">{f.description}</p>
-          </div>
-        ))}
-      </div>
-    ) },
-    { key: "competitors",        label: `Competitors (${doc.competitorAnalysis.length})`, content: (
-      <div className="space-y-3">
-        {doc.competitorAnalysis.map((c, i) => (
-          <div key={i} className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01]">
-            <p className="text-[12px] font-bold text-white mb-1">{c.name}</p>
-            <p className="text-[10px] text-emerald-400 mb-0.5">Our edge: {c.differentiator}</p>
-            <p className="text-[10px] text-red-400">Weakness: {c.weaknesses.join(", ")}</p>
-          </div>
-        ))}
-      </div>
-    ) },
-    { key: "roadmap",            label: `Roadmap (${doc.roadmap.length} phases)`, content: (
-      <div className="space-y-3">
-        {doc.roadmap.map((m, i) => (
-          <div key={i} className="p-3 rounded-xl border border-indigo-500/15 bg-indigo-500/[0.03]">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[12px] font-bold text-white">{m.name}</span>
-              <span className="text-[9px] text-indigo-400 font-mono">{m.duration}</span>
-            </div>
-            <ul className="space-y-1">{m.deliverables.map((d, j) => <li key={j} className="text-[10px] text-[#71717A] flex items-start gap-1.5"><span className="text-indigo-400 mt-0.5">▸</span>{d}</li>)}</ul>
-          </div>
-        ))}
-      </div>
-    ) },
-    { key: "budget",             label: `Budget (${doc.totalBudgetEstimate})`, content: (
-      <div className="space-y-2">
-        {doc.budget.map((b, i) => (
-          <div key={i} className="flex items-center justify-between p-2.5 rounded-xl border border-white/[0.04] bg-white/[0.01]">
-            <div><p className="text-[11px] font-semibold text-white">{b.category}</p><p className="text-[9px] text-[#52525B]">{b.notes}</p></div>
-            <span className="text-[11px] font-bold text-amber-300">{b.amount}</span>
-          </div>
-        ))}
-        <div className="flex items-center justify-between p-2.5 rounded-xl border border-amber-500/20 bg-amber-500/[0.04]">
-          <span className="text-[12px] font-bold text-white">Total Estimate</span>
-          <span className="text-[12px] font-bold text-amber-300">{doc.totalBudgetEstimate}</span>
+          ))}
         </div>
-      </div>
-    ) },
-    { key: "gtm",                label: "Go-to-Market Strategy",     content: <p className="text-[13px] text-[#A1A1AA] leading-relaxed">{doc.goToMarket}</p> },
-    { key: "survival",           label: "Market Survival Guide",     content: <p className="text-[13px] text-emerald-200/70 leading-relaxed">{doc.marketSurvivalGuide}</p> },
-    { key: "kpis",               label: `KPIs & Metrics (${doc.kpis.length})`, content: (
-      <div className="space-y-2">{doc.kpis.map((k, i) => <div key={i} className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01]"><p className="text-[11px] font-bold text-white">{k.name}</p><p className="text-[10px] text-emerald-400 mt-0.5">Target: {k.target}</p><p className="text-[9px] text-[#52525B] mt-0.5">{k.measurement}</p></div>)}</div>
-    ) },
+      )
+    },
+    {
+      key: "competitors", label: `Competitors (${doc.competitorAnalysis.length})`, content: (
+        <div className="space-y-3">
+          {doc.competitorAnalysis.map((c, i) => (
+            <div key={i} className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01]">
+              <p className="text-[12px] font-bold text-white mb-1">{c.name}</p>
+              <p className="text-[10px] text-emerald-400 mb-0.5">Our edge: {c.differentiator}</p>
+              <p className="text-[10px] text-red-400">Weakness: {c.weaknesses.join(", ")}</p>
+            </div>
+          ))}
+        </div>
+      )
+    },
+    {
+      key: "roadmap", label: `Roadmap (${doc.roadmap.length} phases)`, content: (
+        <div className="space-y-3">
+          {doc.roadmap.map((m, i) => (
+            <div key={i} className="p-3 rounded-xl border border-indigo-500/15 bg-indigo-500/[0.03]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[12px] font-bold text-white">{m.name}</span>
+                <span className="text-[9px] text-indigo-400 font-mono">{m.duration}</span>
+              </div>
+              <ul className="space-y-1">{m.deliverables.map((d, j) => <li key={j} className="text-[10px] text-[#71717A] flex items-start gap-1.5"><span className="text-indigo-400 mt-0.5">▸</span>{d}</li>)}</ul>
+            </div>
+          ))}
+        </div>
+      )
+    },
+    {
+      key: "budget", label: `Budget (${doc.totalBudgetEstimate})`, content: (
+        <div className="space-y-2">
+          {doc.budget.map((b, i) => (
+            <div key={i} className="flex items-center justify-between p-2.5 rounded-xl border border-white/[0.04] bg-white/[0.01]">
+              <div><p className="text-[11px] font-semibold text-white">{b.category}</p><p className="text-[9px] text-[#52525B]">{b.notes}</p></div>
+              <span className="text-[11px] font-bold text-amber-300">{b.amount}</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between p-2.5 rounded-xl border border-amber-500/20 bg-amber-500/[0.04]">
+            <span className="text-[12px] font-bold text-white">Total Estimate</span>
+            <span className="text-[12px] font-bold text-amber-300">{doc.totalBudgetEstimate}</span>
+          </div>
+        </div>
+      )
+    },
+    { key: "gtm", label: "Go-to-Market Strategy", content: <p className="text-[13px] text-[#A1A1AA] leading-relaxed">{doc.goToMarket}</p> },
+    { key: "survival", label: "Market Survival Guide", content: <p className="text-[13px] text-emerald-200/70 leading-relaxed">{doc.marketSurvivalGuide}</p> },
+    {
+      key: "kpis", label: `KPIs & Metrics (${doc.kpis.length})`, content: (
+        <div className="space-y-2">{doc.kpis.map((k, i) => <div key={i} className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01]"><p className="text-[11px] font-bold text-white">{k.name}</p><p className="text-[10px] text-emerald-400 mt-0.5">Target: {k.target}</p><p className="text-[9px] text-[#52525B] mt-0.5">{k.measurement}</p></div>)}</div>
+      )
+    },
   ];
 
   return (

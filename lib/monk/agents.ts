@@ -11,64 +11,158 @@ import type {
 } from "./types";
 import {
   mockClassifyIdea, mockAssembleTeam, mockClarifyingQuestions,
-  mockStartupDocument, mockTeamOutput, mockWebsiteCode,
+  mockStartupDocument, mockTeamOutput
 } from "./mock-engine";
+import { queryRAG } from "./rag-engine";
+import { runLangGraphEngineering } from "./langgraph-engine";
 
 export let openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "mock",
   baseURL: process.env.OPENAI_BASE_URL // Required to route to AnythingLLM
 });
 
-export function configureOpenAI(apiKey: string, baseUrl?: string) {
+// HARDCODE YOUR GEMINI KEY HERE:
+process.env.GEMINI_API_KEY = "AIzaSyCpaLXJNXk_SgDxg1VwSBWGRUt_I5kiU3w";
+
+export function configureOpenAI(apiKey: string, baseUrl?: string, geminiKey?: string) {
   process.env.OPENAI_API_KEY = apiKey;
   if (baseUrl) process.env.OPENAI_BASE_URL = baseUrl;
-  
+  if (geminiKey) process.env.GEMINI_API_KEY = geminiKey;
+
   openai = new OpenAI({
     apiKey: apiKey || "mock",
     baseURL: baseUrl || undefined
   });
   _apiAvailable = null; // Reset API status to try again
+  _geminiAvailable = null;
+  _cachedGeminiModel = null;
 }
 
 /* ── API availability tracking ──────────────────────────── */
 // null = unknown (will try), false = quota hit (use mock), true = working
 let _apiAvailable: boolean | null = null;
+let _geminiAvailable: boolean | null = null;
+let _cachedGeminiModel: string | null = null;
 
 function isApiOn(): boolean {
-  if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.trim() === "") return false;
-  if (_apiAvailable === false) return false;
-  return true;
+  const hasGemini = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim() !== "";
+  const hasOpenAi = process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim() !== "" && process.env.OPENAI_API_KEY !== "mock";
+  return Boolean(hasGemini || hasOpenAi);
 }
 
 /* ── GPT helper ──────────────────────────────────────────── */
 
-async function gpt<T>(
+async function gemini<T>(
+  systemPrompt: string,
+  userPrompt: string,
+  maxTokens: number
+): Promise<T> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("Gemini API key missing");
+
+  // Dynamically fetch available models from Google API to prevent "not found" errors
+  if (!_cachedGeminiModel) {
+    try {
+      const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key.trim()}`);
+      if (listRes.ok) {
+        const data = await listRes.json();
+        const valid = (data.models || []).filter((m: any) => m.supportedGenerationMethods?.includes("generateContent") && m.name.includes("gemini"));
+        const preferred = valid.find((m: any) => m.name.includes("flash")) || valid.find((m: any) => m.name.includes("pro")) || valid[0];
+        if (preferred) _cachedGeminiModel = preferred.name.replace("models/", "");
+      }
+    } catch (e) {
+      console.warn("Failed to auto-fetch Gemini models, falling back to default.", e);
+    }
+  }
+  const modelName = _cachedGeminiModel || "gemini-1.5-flash-latest";
+
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key.trim()}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: {
+        parts: [{ text: systemPrompt }]
+      },
+      contents: [{
+        role: "user",
+        parts: [{ text: userPrompt }]
+      }],
+      generationConfig: {
+        maxOutputTokens: maxTokens,
+        temperature: 0.7,
+        responseMimeType: "application/json"
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("\n🚨 GEMINI RAW ERROR:", errorText);
+    const err = new Error(`Gemini API Error: ${response.status} - ${errorText}`);
+    (err as any).status = response.status;
+    throw err;
+  }
+
+  const data = await response.json();
+  let text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+  text = text.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+  _geminiAvailable = true;
+
+  try {
+    return JSON.parse(text) as T;
+  } catch (e) {
+    throw new Error(`Gemini returned invalid JSON. Raw output: ${text.slice(0, 100)}...`);
+  }
+}
+
+export async function gpt<T>(
   systemPrompt: string,
   userPrompt: string,
   maxTokens = 2000
 ): Promise<T> {
-  try {
-    const res = await openai.chat.completions.create({
-      model: "gpt-4o",
-      temperature: 0.7,
-      max_tokens: maxTokens,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    });
-    _apiAvailable = true;
-    return JSON.parse(res.choices[0].message.content || "{}") as T;
-  } catch (error) {
-    console.error("\n🚨 [MONK AI] API Error:", error instanceof Error ? error.message : error);
-    throw error;
+  const hasOpenAI = process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== "mock";
+  const hasGemini = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim() !== "";
+
+  if (hasOpenAI) {
+    try {
+      const res = await openai.chat.completions.create({
+        model: "gpt-4o",
+        temperature: 0.7,
+        max_tokens: maxTokens,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      });
+      _apiAvailable = true;
+      return JSON.parse(res.choices[0].message.content || "{}") as T;
+    } catch (error) {
+      console.error("\n🚨 [MONK AI] OpenAI API Error:", error instanceof Error ? error.message : error);
+      if (hasGemini) {
+        console.log("🔄 [MONK AI] OpenAI failed. Falling back to Gemini...");
+        return await gemini<T>(systemPrompt, userPrompt, maxTokens);
+      }
+      throw error;
+    }
+  } else if (hasGemini) {
+    try {
+      return await gemini<T>(systemPrompt, userPrompt, maxTokens);
+    } catch (error) {
+      console.error("\n🚨 [MONK AI] Gemini API Error:", error instanceof Error ? error.message : error);
+      if (isQuotaError(error)) _geminiAvailable = false;
+      throw error;
+    }
   }
+
+  throw new Error("No API available (OpenAI or Gemini)");
 }
 
 function isQuotaError(e: unknown): boolean {
   const err = e as { status?: number; code?: string; message?: string };
-  return err?.status === 429 || err?.status === 401 || err?.code === "insufficient_quota" || err?.code === "invalid_api_key" || Boolean(String(err?.message).match(/quota|billing|rate.limit|unauthorized|invalid/i));
+  if (err?.status === 429 || err?.status === 401 || err?.status === 403) return true;
+  const msg = String(err?.message).toLowerCase();
+  return err?.code === "insufficient_quota" || err?.code === "invalid_api_key" || Boolean(msg.match(/quota|billing|rate.?limit|unauthorized/i)) || (msg.includes("invalid") && msg.includes("key"));
 }
 
 /* ── Stage 1: Idea Classification ──────────────────────── */
@@ -265,29 +359,8 @@ Personas: ${JSON.stringify(doc.userPersonas)}`,
 }
 
 export async function runEngineeringTeam(doc: StartupDocument): Promise<{ trd: string; websiteCode: string }> {
-  if (!isApiOn()) return { trd: mockTeamOutput("ENGINEERING", doc), websiteCode: mockWebsiteCode(doc) };
-  try {
-    const [trdR, webR] = await Promise.all([
-      gpt<{ trd: string }>(
-        `You are an elite CTO with 30+ years of professional work experience. Write a TRD in clean markdown with system architecture, API design, DB schema.
-Respond with JSON: { "trd": "full markdown" }`,
-        `TRD for: ${doc.executiveSummary}\nStack: ${JSON.stringify(doc.techStack)}`,
-        2000
-      ),
-      gpt<{ code: string }>(
-        `You are a legendary senior full-stack engineer and visionary UI designer with 30+ years of professional work experience. Write a complete working Next.js 14 TypeScript landing page using TailwindCSS.
-DO NOT just use the standard, boring Hero -> Features -> Pricing layout. Invent a unique, highly creative layout that perfectly matches the vibe of a ${doc.sector} startup.
-Use unique colors, sophisticated spacing, and novel sections (like interactive demos, live data feeds, or terminal windows).
-Respond with JSON: { "code": "complete Next.js page code" }`,
-        `Startup: ${doc.suggestedLabel || "Startup"}\nSummary: ${doc.executiveSummary}\nUVP: ${doc.uniqueValueProposition}\nFeatures: ${doc.features.map(f => `${f.name}: ${f.description}`).join("\n")}`,
-        3000
-      ),
-    ]);
-    return { trd: trdR.trd, websiteCode: webR.code };
-  } catch (e) {
-    if (isQuotaError(e)) _apiAvailable = false;
-    return { trd: mockTeamOutput("ENGINEERING", doc), websiteCode: mockWebsiteCode(doc) };
-  }
+  // We now delegate Engineering to the sophisticated cyclical LangGraph pipeline
+  return await runLangGraphEngineering(doc, !isApiOn());
 }
 
 export async function runDesignTeam(doc: StartupDocument): Promise<string> {
@@ -340,9 +413,15 @@ Respond with JSON: { "strategy": "full markdown" }`,
 
 export async function runFinanceTeam(doc: StartupDocument): Promise<string> {
   if (!isApiOn()) return mockTeamOutput("FINANCE", doc);
+
+  // 1. Query Real-Time RAG Vector Store
+  const ragContext = await queryRAG(`Financial metrics, CAC, LTV, and COGS for ${doc.sector} startups`, process.env.OPENAI_API_KEY, !isApiOn());
+
   try {
     const r = await gpt<{ projections: string }>(
       `You are an elite CFO with 30+ years of professional work experience. Write 12-month financial projections and business model in clean markdown with tables.
+CRITICAL: Incorporate the following actual historical market data into your financial model:
+${ragContext}
 Respond with JSON: { "projections": "full markdown" }`,
       `Summary: ${doc.executiveSummary}\nBudget: ${JSON.stringify(doc.budget)}\nTotal: ${doc.totalBudgetEstimate}`,
       2000
@@ -356,9 +435,15 @@ Respond with JSON: { "projections": "full markdown" }`,
 
 export async function runLegalTeam(doc: StartupDocument): Promise<string> {
   if (!isApiOn()) return mockTeamOutput("LEGAL", doc);
+
+  // 1. Query Real-Time RAG Vector Store
+  const ragContext = await queryRAG(`Compliance, regulatory laws, and infrastructure requirements for ${doc.sector} startups`, process.env.OPENAI_API_KEY, !isApiOn());
+
   try {
     const r = await gpt<{ legal: string }>(
       `You are an elite General Counsel with 30+ years of professional work experience. Write a legal compliance checklist in clean markdown.
+CRITICAL: You MUST strictly adhere to the following retrieved compliance law guidelines:
+${ragContext}
 Respond with JSON: { "legal": "full markdown" }`,
       `Summary: ${doc.executiveSummary}\nSector: ${doc.sector}\nRisks: ${JSON.stringify(doc.riskAssessment)}`,
       1500
@@ -388,7 +473,7 @@ Respond with JSON: { "sales": "full markdown" }`,
 
 export async function runGenericTeam(teamId: TeamId, doc: StartupDocument): Promise<string> {
   if (!isApiOn()) return mockTeamOutput(teamId, doc);
-  const def = TEAM_DEFINITIONS[teamId];
+  const def = TEAM_DEFINITIONS[teamId] || { label: teamId, description: "Core startup operations" };
   try {
     const r = await gpt<{ output: string }>(
       `You are an elite head of ${def.label} with 30+ years of professional work experience. Role: ${def.description}. Write a comprehensive deliverable in clean markdown.
