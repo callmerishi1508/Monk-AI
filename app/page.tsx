@@ -304,7 +304,12 @@ export default function Home() {
                 <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="sk-..." className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500/50 outline-none" />
               </div>
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest text-[#52525B] mb-1.5">Base URL</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#52525B]">Base URL</label>
+                  <button onClick={() => setBaseUrl("http://localhost:3001/v1")} className="text-[9px] font-medium text-emerald-400 hover:text-emerald-300 hover:underline">
+                    Use AnythingLLM Default
+                  </button>
+                </div>
                 <input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://api.openai.com/v1" className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500/50 outline-none" />
               </div>
               <div className="flex items-center gap-3 pt-2">
